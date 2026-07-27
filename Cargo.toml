@@ -1,0 +1,38 @@
+[package]
+name = "memrust"
+version = "0.5.0"
+edition = "2021"
+description = "Agent-native memory engine: hybrid retrieval (HNSW + BM25 + entity graph + recency) behind remember/recall/forget, with HTTP and MCP interfaces"
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["ai", "agents", "memory", "vector-search", "mcp"]
+categories = ["database-implementations", "data-structures"]
+exclude = [
+    "idea.txt",
+    "new_search.txt",
+    ".github/",
+    "sdks/",
+    "Dockerfile",
+    ".dockerignore",
+]
+
+[lib]
+name = "memrust"
+path = "src/lib.rs"
+
+[[bin]]
+name = "memrust"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "signal", "time"] }
+axum = "0.7"
+ureq = { version = "2", features = ["json"] }
+
+[profile.release]
+lto = true
+codegen-units = 1

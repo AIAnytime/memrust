@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: fmt + clippy + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  sdk-e2e:
+    name: SDK end-to-end (Python + TypeScript)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build and start server
+        run: |
+          cargo build --release
+          ./target/release/memrust serve --addr 127.0.0.1:7700 --data-dir /tmp/memrust-ci --lifecycle-interval-secs 0 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:7700/health && break; sleep 1; done
+      - name: Python SDK E2E
+        run: MEMRUST_URL=http://127.0.0.1:7700 python3 sdks/python/test_e2e.py
+      - name: TypeScript SDK typecheck + E2E
+        working-directory: sdks/typescript
+        run: |
+          npx -y typescript@5.6 --noEmit -p .
+          MEMRUST_URL=http://127.0.0.1:7700 node --experimental-strip-types --no-warnings test_e2e.mts
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t memrust:ci .

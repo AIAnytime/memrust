@@ -1,0 +1,10 @@
+/target
+/memrust-data
+.env
+.env.*
+*.wal
+checkpoint.json
+sdks/typescript/dist
+sdks/typescript/node_modules
+sdks/python/dist
+__pycache__/

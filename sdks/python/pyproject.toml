@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memrust"
+version = "0.5.0"
+description = "Zero-dependency Python client for the memrust agent memory engine"
+readme = { text = "Python SDK for memrust. See the repository README.", content-type = "text/markdown" }
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+
+[tool.setuptools]
+py-modules = ["memrust"]
