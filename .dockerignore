@@ -4,5 +4,4 @@ memrust-data
 .env
 .env.*
 sdks
-idea.txt
-new_search.txt
+assets

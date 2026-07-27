@@ -1,6 +1,10 @@
+<p align="center">
+  <img src="assets/logo.png" alt="memrust — memory infrastructure for AI agents" width="340">
+</p>
+
 # memrust
 
-**An agent-native memory engine, written in Rust.**
+**Memory infrastructure for AI agents — an agent-native memory engine, written in Rust.**
 
 Not another vector database. Vector DBs answer `query(vector) -> top_k chunks`.
 Agents need something different: a memory system that speaks their language

@@ -8,8 +8,7 @@ readme = "README.md"
 keywords = ["ai", "agents", "memory", "vector-search", "mcp"]
 categories = ["database-implementations", "data-structures"]
 exclude = [
-    "idea.txt",
-    "new_search.txt",
+    "assets/",
     ".github/",
     "sdks/",
     "Dockerfile",
