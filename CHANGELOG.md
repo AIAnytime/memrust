@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Writes no longer block readers for the duration of an fsync.** The write
+  path is split: `stage` builds the record and gets it on disk while holding
+  only a read lock, then `apply_staged` takes the exclusive lock briefly to
+  make it visible. Reads under a concurrent writer went from 467 to 957 QPS
+  with p50 halved (8.52 ms -> 4.78 ms). A commit lock brackets the two phases
+  so a checkpoint cannot land between them and truncate the WAL entry for a
+  record the saved state lacks — verified with concurrent writers, a
+  checkpoint loop, and `kill -9`: no acknowledged write lost.
+
 - **Recall is ~3x faster and recall@10 is now 1.000** (was 1.92 ms / 0.985 at
   20k vectors). Two causes, both found by profiling rather than guessing: the
   filter predicate ran on every visited node even when nothing needed

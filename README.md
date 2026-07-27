@@ -329,17 +329,29 @@ dims, `benches/concurrency.py`:
 
 | Concurrent readers | Writer | QPS | p50 | scaling |
 |---|---|---|---|---|
-| 1 | – | 506 | 1.87 ms | 1.0x |
-| 2 | – | 942 | 1.98 ms | 1.9x |
-| 4 | – | 1,726 | 2.19 ms | 3.4x |
-| 8 | – | 2,263 | 3.36 ms | 4.5x |
-| 4 | yes | 467 | 8.52 ms | — |
+| 1 | – | 487 | 1.83 ms | 1.0x |
+| 2 | – | 918 | 1.99 ms | 1.9x |
+| 4 | – | 2,006 | 1.93 ms | 4.1x |
+| 8 | – | 2,329 | 3.23 ms | 4.8x |
+| 4 | yes | 957 | 4.78 ms | — |
 
-Reads scale sub-linearly but usefully. **A single concurrent writer costs 73%
-of read throughput**, because the WAL fsync happens while the exclusive lock
-is held, so every reader waits out the disk flush. That is the next thing to
-fix (group-commit across concurrent writers, or moving the flush outside the
-lock) and it is a known limitation today, not a solved problem.
+Reads scale sub-linearly but usefully. Writes are two-phase: the record is
+persisted (including its fsync) while holding only a *read* lock, so
+concurrent recalls keep running through the disk flush, and the exclusive
+lock is taken afterwards just long enough to make the record visible in
+memory. That took reads-under-write from 467 to 957 QPS and halved their
+latency.
+
+A writer still costs about half of read throughput, because inserting into
+the HNSW graph — real in-memory work, roughly 2 ms — happens under the
+exclusive lock. Splitting that further (a concurrent or segmented index)
+is open work, and single-writer remains a design constraint.
+
+Correctness note: the two phases are bracketed by a commit lock. Without it a
+checkpoint could land between them and truncate the WAL entry for a record
+that state does not yet contain, losing an acknowledged write. Verified by
+running four writers against a checkpoint loop and then `kill -9`: 1,000
+acknowledged writes, 1,000 recovered.
 
 ### Agent memory: where the architecture actually matters
 

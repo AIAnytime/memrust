@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
+use std::sync::Mutex;
 
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -78,7 +79,9 @@ struct CheckpointOwned {
 }
 
 pub struct MemoryEngine {
-    wal: Wal,
+    /// Behind its own lock: an fsync is milliseconds, and holding the
+    /// engine's exclusive lock for that long blocks every reader.
+    wal: Mutex<Wal>,
     embedder: Box<dyn Embedder>,
     summarizer: Box<dyn Summarizer>,
     cfg: LifecycleConfig,
@@ -134,7 +137,7 @@ impl MemoryEngine {
     ) -> Result<Self> {
         let (wal, ops) = Wal::open(dir)?;
         let mut engine = Self {
-            wal,
+            wal: Mutex::new(wal),
             embedder,
             summarizer,
             cfg,
@@ -213,7 +216,7 @@ impl MemoryEngine {
                 index_dim: self.index_dim,
             },
         )?;
-        self.wal.truncate()
+        self.wal.lock().expect("wal lock").truncate()
     }
 
     fn index_record(&mut self, mut record: MemoryRecord) {
@@ -287,7 +290,22 @@ impl MemoryEngine {
         Ok(e)
     }
 
-    pub fn remember(&mut self, mut req: RememberRequest) -> Result<MemoryRecord> {
+    pub fn remember(&mut self, req: RememberRequest) -> Result<MemoryRecord> {
+        let record = self.stage(req)?;
+        self.apply_staged(std::iter::once(record.clone()));
+        Ok(record)
+    }
+
+    /// Phase one of a write: build the record and get it on disk. Takes
+    /// `&self`, so a caller holding only a *read* lock can run it — which
+    /// means concurrent readers are not blocked for the fsync. The record is
+    /// durable when this returns but not yet visible to recall; phase two
+    /// (`apply_staged`) makes it visible and needs exclusive access.
+    ///
+    /// Callers must hold a commit lock across both phases: a checkpoint
+    /// landing in between would persist state without this record and
+    /// truncate the WAL entry that describes it, losing the write.
+    pub fn stage(&self, mut req: RememberRequest) -> Result<MemoryRecord> {
         if req.text.trim().is_empty() {
             bail!("memory text must not be empty");
         }
@@ -295,12 +313,18 @@ impl MemoryEngine {
             Some(e) => self.prepare_supplied(e)?,
             None => self.embedder.embed(&req.text)?,
         };
-        self.commit(req, embedding)
+        let record = self.build_record(req, embedding);
+        self.wal
+            .lock()
+            .expect("wal lock")
+            .append(&WalOp::Remember {
+                record: Box::new(record.clone()),
+            })?;
+        Ok(record)
     }
 
-    /// Bulk ingestion: texts without supplied vectors are embedded in one
-    /// `embed_batch` call (a single API round-trip for remote embedders).
-    pub fn remember_batch(&mut self, mut reqs: Vec<RememberRequest>) -> Result<Vec<MemoryRecord>> {
+    /// Phase one for a batch: one fsync covers the whole group.
+    pub fn stage_batch(&self, mut reqs: Vec<RememberRequest>) -> Result<Vec<MemoryRecord>> {
         let mut embeddings: Vec<Option<Vec<f32>>> = Vec::with_capacity(reqs.len());
         for req in &mut reqs {
             if req.text.trim().is_empty() {
@@ -316,8 +340,7 @@ impl MemoryEngine {
             .collect();
         if !missing.is_empty() {
             let texts: Vec<&str> = missing.iter().map(|&i| reqs[i].text.as_str()).collect();
-            let embedded = self.embedder.embed_batch(&texts)?;
-            for (&i, e) in missing.iter().zip(embedded) {
+            for (&i, e) in missing.iter().zip(self.embedder.embed_batch(&texts)?) {
                 embeddings[i] = Some(e);
             }
         }
@@ -326,28 +349,31 @@ impl MemoryEngine {
             .zip(embeddings)
             .map(|(req, e)| self.build_record(req, e.expect("embedding filled above")))
             .collect();
-
-        // Group commit: every record hits the log, then one fsync covers them all.
         let ops: Vec<WalOp> = records
             .iter()
             .map(|r| WalOp::Remember {
                 record: Box::new(r.clone()),
             })
             .collect();
-        self.wal.append_batch(&ops)?;
-        for record in &records {
-            self.index_record(record.clone());
-        }
+        self.wal.lock().expect("wal lock").append_batch(&ops)?;
         Ok(records)
     }
 
-    fn commit(&mut self, req: RememberRequest, embedding: Vec<f32>) -> Result<MemoryRecord> {
-        let record = self.build_record(req, embedding);
-        self.wal.append(&WalOp::Remember {
-            record: Box::new(record.clone()),
-        })?;
-        self.index_record(record.clone());
-        Ok(record)
+    /// Phase two: make staged records visible. In-memory only — no disk, so
+    /// the exclusive lock is held for microseconds instead of an fsync.
+    pub fn apply_staged(&mut self, records: impl IntoIterator<Item = MemoryRecord>) {
+        for record in records {
+            self.index_record(record);
+        }
+    }
+
+    /// Bulk ingestion: texts without supplied vectors are embedded in one
+    /// `embed_batch` call, and the whole group is persisted behind a single
+    /// fsync before any of it becomes visible.
+    pub fn remember_batch(&mut self, reqs: Vec<RememberRequest>) -> Result<Vec<MemoryRecord>> {
+        let records = self.stage_batch(reqs)?;
+        self.apply_staged(records.clone());
+        Ok(records)
     }
 
     /// Build a record without persisting it, so batch ingest can group the
@@ -389,7 +415,10 @@ impl MemoryEngine {
         if !self.records.contains_key(&id) {
             return Ok(false);
         }
-        self.wal.append(&WalOp::Forget { id })?;
+        self.wal
+            .lock()
+            .expect("wal lock")
+            .append(&WalOp::Forget { id })?;
         Ok(self.drop_record(&id))
     }
 
@@ -702,9 +731,12 @@ impl MemoryEngine {
                     })),
                     embedding: Some(embedding),
                 };
-                self.wal.append(&WalOp::Remember {
-                    record: Box::new(summary.clone()),
-                })?;
+                self.wal
+                    .lock()
+                    .expect("wal lock")
+                    .append(&WalOp::Remember {
+                        record: Box::new(summary.clone()),
+                    })?;
                 report.summaries.push(summary.id);
                 self.index_record(summary);
                 for r in batch {
@@ -716,7 +748,13 @@ impl MemoryEngine {
 
         // Bound restart replay time: once the WAL tail is long enough,
         // serialize the built state and truncate the log.
-        if self.wal.appends_since_checkpoint() >= CHECKPOINT_AFTER_OPS {
+        if self
+            .wal
+            .lock()
+            .expect("wal lock")
+            .appends_since_checkpoint()
+            >= CHECKPOINT_AFTER_OPS
+        {
             self.checkpoint()?;
             report.checkpointed = true;
         }
@@ -754,9 +792,12 @@ impl MemoryEngine {
             if record.embedding.is_none() {
                 record.embedding = Some(self.embedder.embed(&record.text)?);
             }
-            self.wal.append(&WalOp::Remember {
-                record: Box::new(record.clone()),
-            })?;
+            self.wal
+                .lock()
+                .expect("wal lock")
+                .append(&WalOp::Remember {
+                    record: Box::new(record.clone()),
+                })?;
             self.index_record(record);
             added += 1;
         }
@@ -792,7 +833,11 @@ impl MemoryEngine {
             vector_dim: self.index_dim,
             entities: self.graph.entity_count(),
             quantized: self.vec_index.is_quantized(),
-            wal_tail_ops: self.wal.appends_since_checkpoint(),
+            wal_tail_ops: self
+                .wal
+                .lock()
+                .expect("wal lock")
+                .appends_since_checkpoint(),
         }
     }
 }

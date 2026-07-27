@@ -13,7 +13,7 @@
 //! GET  /health                             -> EngineStats
 //! GET  /                                   -> embedded web dashboard
 
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use axum::extract::{DefaultBodyLimit, Query, State};
 use axum::http::StatusCode;
@@ -34,6 +34,26 @@ fn without_embedding(mut record: MemoryRecord) -> MemoryRecord {
 }
 
 type Shared = Arc<RwLock<MemoryEngine>>;
+
+/// Writes run in two phases — persist under a *read* lock (so readers are not
+/// blocked for the fsync), then apply under the write lock. This mutex
+/// serializes writers across both phases. Without it a checkpoint could land
+/// between them, saving state that lacks the record and truncating the WAL
+/// entry that describes it, which would lose an acknowledged write.
+#[derive(Clone)]
+struct AppState {
+    engine: Shared,
+    commit: Arc<Mutex<()>>,
+}
+
+impl AppState {
+    fn new(engine: Shared) -> Self {
+        Self {
+            engine,
+            commit: Arc::new(Mutex::new(())),
+        }
+    }
+}
 
 /// Bulk ingest sends raw embeddings, so request bodies are large by nature:
 /// 10k memories at 1024 dims is ~125 MB of JSON. Axum defaults to 2 MB,
@@ -57,7 +77,7 @@ pub fn router(engine: Shared) -> Router {
         .route("/v1/snapshot", post(snapshot))
         .route("/v1/restore", post(restore))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
-        .with_state(engine)
+        .with_state(AppState::new(engine))
 }
 
 pub async fn serve(engine: Shared, addr: &str) -> anyhow::Result<()> {
@@ -85,10 +105,11 @@ fn default_page() -> usize {
 }
 
 async fn list_memories(
-    State(engine): State<Shared>,
+    State(state): State<AppState>,
     Query(q): Query<ListQuery>,
 ) -> Json<serde_json::Value> {
-    let (total, records) = engine
+    let (total, records) = state
+        .engine
         .read()
         .unwrap()
         .list_memories(q.offset, q.limit.min(200));
@@ -107,10 +128,11 @@ fn default_entities() -> usize {
 }
 
 async fn entities(
-    State(engine): State<Shared>,
+    State(state): State<AppState>,
     Query(q): Query<EntitiesQuery>,
 ) -> Json<serde_json::Value> {
-    let entities: Vec<serde_json::Value> = engine
+    let entities: Vec<serde_json::Value> = state
+        .engine
         .read()
         .unwrap()
         .top_entities(q.limit.min(200))
@@ -120,8 +142,8 @@ async fn entities(
     Json(json!({ "entities": entities }))
 }
 
-async fn health(State(engine): State<Shared>) -> Json<serde_json::Value> {
-    let stats = engine.read().unwrap().stats();
+async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let stats = state.engine.read().unwrap().stats();
     Json(json!({ "status": "ok", "stats": stats }))
 }
 
@@ -129,21 +151,33 @@ async fn health(State(engine): State<Shared>) -> Json<serde_json::Value> {
 // run on the blocking pool instead of stalling tokio workers.
 
 async fn remember(
-    State(engine): State<Shared>,
+    State(state): State<AppState>,
     Json(req): Json<RememberRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let record = tokio::task::spawn_blocking(move || engine.write().unwrap().remember(req))
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let record = tokio::task::spawn_blocking(move || -> anyhow::Result<MemoryRecord> {
+        let _commit = state.commit.lock().expect("commit lock");
+        // Persist under a read lock: concurrent recalls keep running while
+        // this write waits on the disk.
+        let record = state.engine.read().unwrap().stage(req)?;
+        // Make it visible: in-memory only, so the exclusive lock is brief.
+        state
+            .engine
+            .write()
+            .unwrap()
+            .apply_staged(std::iter::once(record.clone()));
+        Ok(record)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     Ok(Json(json!({ "record": without_embedding(record) })))
 }
 
 async fn recall(
-    State(engine): State<Shared>,
+    State(state): State<AppState>,
     Json(req): Json<RecallRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let mut hits = tokio::task::spawn_blocking(move || engine.read().unwrap().recall(&req))
+    let mut hits = tokio::task::spawn_blocking(move || state.engine.read().unwrap().recall(&req))
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     for hit in &mut hits {
@@ -158,37 +192,47 @@ struct RememberBatchBody {
 }
 
 async fn remember_batch(
-    State(engine): State<Shared>,
+    State(state): State<AppState>,
     Json(body): Json<RememberBatchBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let records =
-        tokio::task::spawn_blocking(move || engine.write().unwrap().remember_batch(body.items))
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let records = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<MemoryRecord>> {
+        let _commit = state.commit.lock().expect("commit lock");
+        let records = state.engine.read().unwrap().stage_batch(body.items)?;
+        state.engine.write().unwrap().apply_staged(records.clone());
+        Ok(records)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     let records: Vec<_> = records.into_iter().map(without_embedding).collect();
     Ok(Json(json!({ "records": records })))
 }
 
 async fn checkpoint(
-    State(engine): State<Shared>,
+    State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    tokio::task::spawn_blocking(move || engine.write().unwrap().checkpoint())
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    tokio::task::spawn_blocking(move || {
+        let _commit = state.commit.lock().expect("commit lock");
+        state.engine.write().unwrap().checkpoint()
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(json!({ "checkpointed": true })))
 }
 
 // Lifecycle runs the summarizer and embedder (possibly remote), so it goes
 // on the blocking pool like remember/recall.
 async fn lifecycle_run(
-    State(engine): State<Shared>,
+    State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let report = tokio::task::spawn_blocking(move || engine.write().unwrap().run_lifecycle())
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let report = tokio::task::spawn_blocking(move || {
+        let _commit = state.commit.lock().expect("commit lock");
+        state.engine.write().unwrap().run_lifecycle()
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(json!({ "report": report })))
 }
 
@@ -199,10 +243,14 @@ struct SnapshotBody {
 }
 
 async fn snapshot(
-    State(engine): State<Shared>,
+    State(state): State<AppState>,
     Json(body): Json<SnapshotBody>,
 ) -> Json<serde_json::Value> {
-    let snapshot = engine.read().unwrap().snapshot(body.session_id.as_deref());
+    let snapshot = state
+        .engine
+        .read()
+        .unwrap()
+        .snapshot(body.session_id.as_deref());
     Json(json!({ "snapshot": snapshot }))
 }
 
@@ -212,14 +260,16 @@ struct RestoreBody {
 }
 
 async fn restore(
-    State(engine): State<Shared>,
+    State(state): State<AppState>,
     Json(body): Json<RestoreBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let restored =
-        tokio::task::spawn_blocking(move || engine.write().unwrap().restore(body.records))
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let restored = tokio::task::spawn_blocking(move || {
+        let _commit = state.commit.lock().expect("commit lock");
+        state.engine.write().unwrap().restore(body.records)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     Ok(Json(json!({ "restored": restored })))
 }
 
@@ -229,13 +279,17 @@ struct ForgetBody {
 }
 
 async fn forget(
-    State(engine): State<Shared>,
+    State(state): State<AppState>,
     Json(body): Json<ForgetBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let forgotten = engine
-        .write()
-        .unwrap()
-        .forget(body.id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let forgotten = {
+        let _commit = state.commit.lock().expect("commit lock");
+        state
+            .engine
+            .write()
+            .unwrap()
+            .forget(body.id)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    };
     Ok(Json(json!({ "forgotten": forgotten })))
 }
