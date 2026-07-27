@@ -119,7 +119,7 @@ Both SDKs are zero-dependency thin clients for `memrust serve`; passing an
 agent id scopes the whole client.
 
 ```python
-# sdks/python — stdlib only
+# pip install memrust — stdlib only
 from memrust import MemrustClient
 memory = MemrustClient("http://127.0.0.1:7700", agent_id="planner")
 memory.remember("user prefers concise answers", kind="semantic", visibility="shared")
@@ -127,7 +127,7 @@ hits = memory.recall("what does the user prefer?", strategy="relational")
 ```
 
 ```typescript
-// sdks/typescript — fetch-based, Node 18+/Bun/Deno/browsers
+// npm install memrust-client — fetch-based, Node 18+/Bun/Deno/browsers
 import { MemrustClient } from "memrust-client";
 const memory = new MemrustClient("http://127.0.0.1:7700", { agentId: "planner" });
 await memory.remember("user prefers concise answers", { kind: "semantic" });
