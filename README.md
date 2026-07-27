@@ -132,13 +132,14 @@ const hits = await memory.recall("what does the user prefer?");
 ### Colab notebooks
 
 Three runnable notebooks in [`notebooks/`](notebooks/) — everything installs
-with pip and the engine downloads as a single static binary:
+with pip and the engine downloads as a single static binary. No API key needed
+for the quickstart.
 
-| Notebook | What it covers |
-|---|---|
-| [01_quickstart](https://colab.research.google.com/github/AIAnytime/memrust/blob/main/notebooks/01_quickstart.ipynb) | install → remember → explained recall → strategies → dashboard, in ~2 minutes |
-| [02_rag_with_embeddings](https://colab.research.google.com/github/AIAnytime/memrust/blob/main/notebooks/02_rag_with_embeddings.ipynb) | sentence-transformers embeddings, vector storage, hybrid retrieval, full RAG loop, memory lifecycle |
-| [03_pdf_rag_agents](https://colab.research.google.com/github/AIAnytime/memrust/blob/main/notebooks/03_pdf_rag_agents.ipynb) | pypdf ingestion, LangGraph RAG agent that writes memories back, multi-agent visibility, the whole feature set |
+| Notebook | What it covers | |
+|---|---|---|
+| **01 · quickstart** | install → remember → explained recall → strategies → dashboard, in ~2 minutes | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/AIAnytime/memrust/blob/main/notebooks/01_quickstart.ipynb) |
+| **02 · RAG with embeddings** | sentence-transformers, vector storage, hybrid retrieval, full RAG loop, memory lifecycle | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/AIAnytime/memrust/blob/main/notebooks/02_rag_with_embeddings.ipynb) |
+| **03 · PDF RAG + agents** | pypdf ingestion, a LangGraph agent that writes memories back, multi-agent visibility, the whole feature set | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/AIAnytime/memrust/blob/main/notebooks/03_pdf_rag_agents.ipynb) |
 
 ### Web dashboard
 
