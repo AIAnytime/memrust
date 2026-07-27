@@ -37,19 +37,24 @@ jobs:
   crates-io:
     name: Publish to crates.io
     runs-on: ubuntu-latest
-    # Requires the CARGO_REGISTRY_TOKEN repository secret.
+    # Skips cleanly until the CARGO_REGISTRY_TOKEN repository secret exists.
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
     steps:
+      - name: Skip (no CARGO_REGISTRY_TOKEN secret)
+        if: env.CARGO_REGISTRY_TOKEN == ''
+        run: echo "CARGO_REGISTRY_TOKEN not configured — skipping crates.io publish"
       - uses: actions/checkout@v4
+        if: env.CARGO_REGISTRY_TOKEN != ''
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        if: env.CARGO_REGISTRY_TOKEN != ''
+      - if: env.CARGO_REGISTRY_TOKEN != ''
+        run: cargo publish --token "$CARGO_REGISTRY_TOKEN"
 
   pypi:
     name: Publish Python SDK to PyPI
     runs-on: ubuntu-latest
-    # Uses PyPI trusted publishing (configure the project on pypi.org first).
-    environment: release
-    permissions:
-      id-token: write
+    # Token auth via the PYPI_TOKEN repository secret.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -59,21 +64,28 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: sdks/python/dist
+          password: ${{ secrets.PYPI_TOKEN }}
 
   npm:
     name: Publish TypeScript SDK to npm
     runs-on: ubuntu-latest
-    # Requires the NPM_TOKEN repository secret.
+    # Skips cleanly until the NPM_TOKEN repository secret exists.
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
+      - name: Skip (no NPM_TOKEN secret)
+        if: env.NODE_AUTH_TOKEN == ''
+        run: echo "NPM_TOKEN not configured — skipping npm publish"
       - uses: actions/checkout@v4
+        if: env.NODE_AUTH_TOKEN != ''
       - uses: actions/setup-node@v4
+        if: env.NODE_AUTH_TOKEN != ''
         with:
           node-version: "22"
           registry-url: https://registry.npmjs.org
-      - working-directory: sdks/typescript
+      - if: env.NODE_AUTH_TOKEN != ''
+        working-directory: sdks/typescript
         run: |
           npm install --no-audit --no-fund
           npm run build
           npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
