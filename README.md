@@ -89,6 +89,21 @@ Uniform random vectors are the distance-concentration worst case for any ANN
 method; real embeddings behave like the clustered rows. `ef_search` is the
 accuracy/speed dial.
 
+**Choosing an embedding dimension** (n=6k, clustered, `memrust bench --dim N`):
+
+| Dim | f32 QPS | f32 recall@10 | SQ8 QPS | SQ8 recall@10 | Vectors (f32 → SQ8) |
+|---|---|---|---|---|---|
+| 384 (MiniLM) | 6,241 | 1.000 | 5,468 | 0.998 | 8.8 → 2.2 MB |
+| 1024 (BGE-large, E5-large) | 1,562 | 1.000 | 1,645 | 0.992 | 23.4 → 5.9 MB |
+| 1536 (OpenAI v3-small) | 1,001 | 1.000 | 1,006 | 0.996 | 35.2 → 8.8 MB |
+
+Dimension is a capacity ceiling, not a quality dial — retrieval quality comes
+from the model's training, not its width, and the cost of width is
+superlinear (2.7x the dims cost 4x the throughput here). Two practical
+consequences: prefer 768–1024 unless you've measured a gain from more, and
+note that **`--quantize` overtakes f32 on speed at ≥1024 dims** (memory
+bandwidth starts to dominate) while using 4x less memory.
+
 ### Multi-agent memory
 
 Multiple agents can share one engine while keeping private state private:

@@ -18,9 +18,15 @@ as a single static binary (no Rust toolchain needed).
 - **Each notebook uses its own data dir** (`memory-quickstart`, `memory-rag`,
   `memory-pdf-rag`), so they never collide — a collection's vector dimension
   is fixed by the first vector stored in it.
-- **Embeddings**: notebooks 2 and 3 embed locally and pass vectors explicitly
-  (bring-your-own). To let the engine embed server-side instead, start it with
-  `--embedder openai --embedding-model text-embedding-3-small` and drop the
-  `embedding=` / `query_embedding=` arguments.
+- **Embeddings**: notebooks 2 and 3 use **BGE-large-en-v1.5** (1024-dim,
+  ~1.3 GB — the first run downloads it) and embed locally, passing vectors
+  explicitly (bring-your-own). Swap `BAAI/bge-base-en-v1.5` (768-dim) or
+  `all-MiniLM-L6-v2` (384-dim) for a smaller/faster download. To let the
+  engine embed server-side instead, start it with `--embedder openai
+  --embedding-model text-embedding-3-small` and drop the `embedding=` /
+  `query_embedding=` arguments.
+- **BGE is asymmetric**: queries take an instruction prefix, stored passages
+  don't. The notebooks model this with separate `emb()` / `emb_query()`
+  helpers — getting it wrong quietly costs recall.
 - **Running locally?** Replace the download in the bootstrap cell with
   `cargo build --release` and point `BIN` at `target/release/memrust`.
