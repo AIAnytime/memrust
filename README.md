@@ -12,24 +12,9 @@ Agents need something different: a memory system that speaks their language
 (meaning, exact terms, time, importance), explains *why* each memory surfaced,
 and plugs directly into agent runtimes via MCP.
 
-```
-                     Agent (Claude Code, LangGraph, OpenAI SDK, ...)
-                                       │
-                          MCP (stdio)  │  HTTP / SDKs
-                                       │
-                               memory.recall()
-                                       │
-               ┌────────────┬──────────┴─────────┬────────────┐
-            HNSW          BM25              Entity Graph   Temporal
-         (semantic)    (exact terms)     (related things) (recency)
-               └────────────┴──────────┬─────────┴────────────┘
-                         Reciprocal-Rank Fusion
-                        + importance weighting
-                                       │
-                        optional LLM/cross-encoder rerank
-                                       │
-                        Scored, *explained* memories
-```
+<p align="center">
+  <img src="assets/arch.png" alt="memrust architecture: agent calls memory.recall() over MCP or HTTP; HNSW, BM25, entity graph and temporal signals are fused with reciprocal-rank fusion, optionally reranked, and returned as scored explained memories" width="560">
+</p>
 
 ## Why hybrid retrieval matters for agents
 

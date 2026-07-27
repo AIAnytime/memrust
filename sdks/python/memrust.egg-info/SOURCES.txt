@@ -1,6 +1,0 @@
-memrust.py
-pyproject.toml
-memrust.egg-info/PKG-INFO
-memrust.egg-info/SOURCES.txt
-memrust.egg-info/dependency_links.txt
-memrust.egg-info/top_level.txt

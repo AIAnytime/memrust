@@ -1,9 +1,0 @@
-Metadata-Version: 2.4
-Name: memrust
-Version: 0.5.0
-Summary: Zero-dependency Python client for the memrust agent memory engine
-License: Apache-2.0
-Requires-Python: >=3.9
-Description-Content-Type: text/markdown
-
-Python SDK for memrust. See the repository README.

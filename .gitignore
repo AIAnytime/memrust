@@ -11,3 +11,5 @@ __pycache__/
 /target-linux
 /memrust-bin
 /memory-*
+.DS_Store
+*.egg-info/
