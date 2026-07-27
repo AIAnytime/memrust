@@ -6,6 +6,11 @@
 
 **Memory infrastructure for AI agents — an agent-native memory engine, written in Rust.**
 
+[![crates.io](https://img.shields.io/crates/v/memrust.svg)](https://crates.io/crates/memrust)
+[![PyPI](https://img.shields.io/pypi/v/memrust.svg)](https://pypi.org/project/memrust/)
+[![npm](https://img.shields.io/npm/v/memrust-client.svg)](https://www.npmjs.com/package/memrust-client)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 Not another vector database. Vector DBs answer `query(vector) -> top_k chunks`.
 Agents need something different: a memory system that speaks their language
 (`remember` / `recall` / `forget`), retrieves across multiple signals at once
@@ -51,10 +56,15 @@ Pure vector search is where agent memory goes to die quietly:
 ## Quickstart
 
 ```bash
-# Docker: a memory engine on :7700 in one line
-docker build -t memrust . && docker run -p 7700:7700 -v memrust-data:/data memrust
+# Install the engine
+cargo install memrust        # or: docker build -t memrust .
+memrust serve                # dashboard + HTTP API on 127.0.0.1:7700
 
-# or from source
+# Client SDKs
+pip install memrust          # Python
+npm install memrust-client   # TypeScript
+
+# From source
 cargo run -- demo                    # seeded demo: hybrid recall with per-signal scores
 cargo run -- serve                   # HTTP API on 127.0.0.1:7700
 cargo run -- mcp                     # MCP server on stdio
