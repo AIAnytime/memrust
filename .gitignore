@@ -13,3 +13,4 @@ __pycache__/
 /memory-*
 .DS_Store
 *.egg-info/
+*.pdf
