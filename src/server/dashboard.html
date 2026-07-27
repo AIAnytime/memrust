@@ -249,7 +249,8 @@ async function loadStats() {
     { v: s.lexical_indexed, l: "lexical indexed" },
     { v: s.entities, l: "graph entities" },
     { v: s.wal_tail_ops, l: "wal tail ops" },
-    { v: `${s.embedding_dim}<span class="sub"> dim · ${s.quantized ? "SQ8" : "f32"}</span>`, l: "embeddings" },
+    { v: `${s.vector_dim ?? s.embedding_dim}<span class="sub"> dim · ${s.quantized ? "SQ8" : "f32"}</span>`,
+      l: s.vector_dim && s.vector_dim !== s.embedding_dim ? "vectors (byo)" : "embeddings" },
   ].map((t) => `<div class="tile"><div class="v">${t.v}</div><div class="l">${t.l}</div></div>`).join("");
 }
 

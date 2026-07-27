@@ -237,7 +237,12 @@ pub struct EngineStats {
     pub total_memories: usize,
     pub vector_indexed: usize,
     pub lexical_indexed: usize,
+    /// Dimension of the engine's own embedder (unused when callers supply
+    /// their own vectors).
     pub embedding_dim: usize,
+    /// Dimension of the vector index itself — set by the first vector stored,
+    /// so it reflects bring-your-own embeddings. None until one is stored.
+    pub vector_dim: Option<usize>,
     /// Distinct entities tracked by the graph index.
     pub entities: usize,
     /// Whether the vector index stores SQ8 codes instead of f32.

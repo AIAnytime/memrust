@@ -86,6 +86,7 @@ export interface EngineStats {
   vector_indexed: number;
   lexical_indexed: number;
   embedding_dim: number;
+  vector_dim: number | null;
   entities: number;
   quantized: boolean;
   wal_tail_ops: number;

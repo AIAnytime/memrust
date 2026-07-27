@@ -728,6 +728,7 @@ impl MemoryEngine {
             vector_indexed: self.vec_index.len(),
             lexical_indexed: self.text_index.len(),
             embedding_dim: self.embedder.dim(),
+            vector_dim: self.index_dim,
             entities: self.graph.entity_count(),
             quantized: self.vec_index.is_quantized(),
             wal_tail_ops: self.wal.appends_since_checkpoint(),

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.1 — 2026-07-27
+
+Fixes found by writing the Colab notebooks — the notebooks are the first
+consumer of the bring-your-own-embeddings path end to end.
+
+- **Consolidation summaries are now recallable by vector in BYO-embedding
+  collections.** Summaries were embedded with the engine's own embedder,
+  which cannot produce dimension-compatible vectors when callers supply
+  their own — the summary silently degraded to lexical-only. Summaries now
+  use the normalized centroid of their source embeddings, which is
+  dimension-correct by construction and semantically the consolidation of
+  those memories.
+- **`vector_dim` in engine stats** — the vector index's actual dimension
+  (set by the first stored vector), distinct from `embedding_dim` (the
+  engine's own embedder, unused under BYO). The dashboard shows whichever
+  governs search.
+- Three Colab notebooks in `notebooks/`, all pip-installable.
+
 ## 0.5.0 — 2026-07-27
 
 The launch release: engine, lifecycle, scale features, four-signal retrieval,
