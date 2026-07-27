@@ -9,6 +9,20 @@ as a single static binary (no Rust toolchain needed).
 | 2 | `02_rag_with_embeddings.ipynb` | sentence-transformers embeddings, vector storage, hybrid retrieval, a full RAG loop, memory lifecycle | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/AIAnytime/memrust/blob/main/notebooks/02_rag_with_embeddings.ipynb) |
 | 3 | `03_pdf_rag_agents.ipynb` | pypdf ingestion, a LangGraph RAG agent that writes memories back, multi-agent visibility, the whole feature set | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/AIAnytime/memrust/blob/main/notebooks/03_pdf_rag_agents.ipynb) |
 
+## Opening the dashboard
+
+`memrust serve` embeds a management UI at `http://127.0.0.1:7700/`. **In Colab
+that address in your own browser will refuse the connection** — the server
+lives inside the Colab VM, not on your machine. Every notebook has a cell that
+proxies the port:
+
+```python
+from google.colab import output
+output.serve_kernel_port_as_window(7700)
+```
+
+Running locally instead, `http://127.0.0.1:7700/` works directly.
+
 ## Notes
 
 - **API keys are optional.** Notebook 1 needs none. Notebook 2 prints the
