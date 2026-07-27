@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.2 — 2026-07-27
+
+- **SQ8 quantization is now the default for vectors >= 1024 dims.** At that
+  width and above, quantized search measures as fast as (or faster than) f32
+  because memory bandwidth dominates the extra decode arithmetic — so the
+  4x memory saving is effectively free. Below 1024 dims f32 is faster and
+  stays the default. The storage mode is settled by the first vector stored,
+  since that is when the width becomes known.
+- `--quantize` / `--no-quantize` force the mode; `HnswConfig.quantize` is now
+  `Quantization::{Auto, Always, Never}` (was a bool). Checkpoints written
+  with the old bool form still load — `false` maps to `Never`, so an existing
+  collection never silently changes representation.
+
 ## 0.5.1 — 2026-07-27
 
 Fixes found by writing the Colab notebooks — the notebooks are the first

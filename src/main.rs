@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 use anyhow::{bail, Result};
 use memrust::embed::{Embedder, HashEmbedder, RemoteEmbedder};
 use memrust::engine::MemoryEngine;
-use memrust::index::vector::HnswConfig;
+use memrust::index::vector::{HnswConfig, Quantization, AUTO_QUANTIZE_DIM};
 use memrust::rerank::LlmReranker;
 use memrust::summarize::{ExtractiveSummarizer, RemoteSummarizer, Summarizer};
 use memrust::types::{LifecycleConfig, MemoryKind, RecallRequest, RecallStrategy, RememberRequest};
@@ -13,13 +13,16 @@ const USAGE: &str = "\
 memrust — agent-native memory engine
 
 USAGE:
-    memrust serve [--addr 127.0.0.1:7700] [--data-dir ./memrust-data] [--quantize] [options]
-    memrust mcp   [--data-dir ./memrust-data] [--quantize] [--agent-id <name>] [options]
+    memrust serve [--addr 127.0.0.1:7700] [--data-dir ./memrust-data] [options]
+    memrust mcp   [--data-dir ./memrust-data] [--agent-id <name>] [options]
     memrust demo
     memrust bench [--n 20000] [--dim 256]
 
 SCALE OPTIONS:
-    --quantize    store SQ8 codes in the vector index (1 byte/dim instead of 4)
+    --quantize      force SQ8 codes in the vector index (1 byte/dim instead of 4)
+    --no-quantize   force f32 vectors
+                    Default: SQ8 automatically for vectors >= 1024 dims, where it
+                    is as fast as f32 and uses 4x less memory; f32 below that.
 
 MULTI-AGENT (mcp):
     --agent-id <name>   stamp remembers with this identity (private by default)
@@ -87,8 +90,18 @@ type Shared = Arc<RwLock<MemoryEngine>>;
 
 fn open_engine(args: &[String]) -> Result<Shared> {
     let dir = PathBuf::from(flag(args, "--data-dir", "./memrust-data"));
+    let quantize = match (
+        args.iter().any(|a| a == "--quantize"),
+        args.iter().any(|a| a == "--no-quantize"),
+    ) {
+        (true, true) => bail!("pass either --quantize or --no-quantize, not both"),
+        (true, false) => Quantization::Always,
+        (false, true) => Quantization::Never,
+        // Auto: decided by the first vector's width (>= AUTO_QUANTIZE_DIM).
+        (false, false) => Quantization::Auto,
+    };
     let index_cfg = HnswConfig {
-        quantize: args.iter().any(|a| a == "--quantize"),
+        quantize,
         ..HnswConfig::default()
     };
     let mut engine = MemoryEngine::open_with_options(
@@ -153,7 +166,7 @@ fn bench(args: &[String]) -> Result<()> {
     }
     let mut rng = Rng(42);
 
-    println!("memrust bench: n={n} dim={dim} (HNSW m=16 ef_search={ef})");
+    println!("memrust bench: n={n} dim={dim} (HNSW m=16 ef_search={ef}; auto-quantize at >={AUTO_QUANTIZE_DIM} dims)");
     for clustered in [true, false] {
         let (vectors, query_set): (Vec<Vec<f32>>, Vec<Vec<f32>>) = if clustered {
             let n_centers = (n / 100).max(10);
@@ -188,13 +201,17 @@ fn bench(args: &[String]) -> Result<()> {
         }
 
         let shape = if clustered { "clustered" } else { "uniform  " };
-        for quantize in [false, true] {
+        for quantize in [Quantization::Never, Quantization::Always] {
             let cfg = HnswConfig {
                 quantize,
                 ef_search: ef,
                 ..HnswConfig::default()
             };
-            let label = if quantize { "sq8" } else { "f32" };
+            let label = if quantize == Quantization::Always {
+                "sq8"
+            } else {
+                "f32"
+            };
 
             let t = Instant::now();
             let mut hnsw = Hnsw::new(cfg);
@@ -222,7 +239,11 @@ fn bench(args: &[String]) -> Result<()> {
                 total += truth.len();
             }
 
-            let vec_bytes = if quantize { n * (dim + 8) } else { n * dim * 4 };
+            let vec_bytes = if quantize == Quantization::Always {
+                n * (dim + 8)
+            } else {
+                n * dim * 4
+            };
             println!(
                 "  {shape} {label}: build {:>6.2}s ({:>6.0} inserts/s) | search {:>6.0} qps | recall@10 {:.3} | vectors {:.1} MB",
                 build.as_secs_f64(),

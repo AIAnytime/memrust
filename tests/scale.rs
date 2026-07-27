@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use memrust::embed::HashEmbedder;
 use memrust::engine::MemoryEngine;
-use memrust::index::vector::HnswConfig;
+use memrust::index::vector::{HnswConfig, Quantization};
 use memrust::summarize::ExtractiveSummarizer;
 use memrust::types::{LifecycleConfig, MemoryKind, RecallRequest, RememberRequest};
 
@@ -12,7 +12,7 @@ fn tmp_dir(name: &str) -> PathBuf {
     dir
 }
 
-fn open(dir: &Path, quantize: bool) -> MemoryEngine {
+fn open(dir: &Path, quantize: Quantization) -> MemoryEngine {
     MemoryEngine::open_with_options(
         dir,
         Box::new(HashEmbedder::new(256)),
@@ -36,7 +36,7 @@ fn wal_lines(dir: &Path) -> usize {
 fn checkpoint_plus_tail_recovery() {
     let dir = tmp_dir("checkpoint");
     {
-        let mut engine = open(&dir, false);
+        let mut engine = open(&dir, Quantization::Never);
         for i in 0..5 {
             engine
                 .remember(RememberRequest {
@@ -65,7 +65,7 @@ fn checkpoint_plus_tail_recovery() {
         assert_eq!(wal_lines(&dir), 2);
     }
     // Reopen: checkpoint + 2-op tail, not a 7-op replay.
-    let engine = open(&dir, false);
+    let engine = open(&dir, Quantization::Never);
     assert_eq!(engine.stats().total_memories, 7);
     let hits = engine.recall(&RecallRequest {
         query: "tail fact checkpoint".into(),
@@ -79,7 +79,7 @@ fn checkpoint_plus_tail_recovery() {
 fn forgetting_survives_checkpoint_and_tail() {
     let dir = tmp_dir("forget-tail");
     let victim = {
-        let mut engine = open(&dir, false);
+        let mut engine = open(&dir, Quantization::Never);
         let keep = engine
             .remember(RememberRequest {
                 text: "durable fact".into(),
@@ -98,7 +98,7 @@ fn forgetting_survives_checkpoint_and_tail() {
         drop(keep);
         victim.id
     };
-    let engine = open(&dir, false);
+    let engine = open(&dir, Quantization::Never);
     assert!(
         engine.get(&victim).is_none(),
         "tail forget must apply over checkpoint state"
@@ -107,11 +107,55 @@ fn forgetting_survives_checkpoint_and_tail() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// Auto mode (the default) settles from the first vector's width: wide
+/// embeddings get SQ8, narrow ones stay f32 — and the choice survives a
+/// checkpoint round-trip.
+#[test]
+fn auto_quantization_follows_vector_width() {
+    for (dim, expect_sq8) in [(1024usize, true), (384usize, false)] {
+        let dir = tmp_dir(&format!("auto{dim}"));
+        {
+            let mut engine = open(&dir, Quantization::Auto);
+            assert!(!engine.stats().quantized, "undecided while empty");
+            engine
+                .remember(RememberRequest {
+                    text: format!("a memory carrying a {dim}-dim vector"),
+                    embedding: Some(unit_vector(dim)),
+                    ..Default::default()
+                })
+                .unwrap();
+            let stats = engine.stats();
+            assert_eq!(stats.vector_dim, Some(dim));
+            assert_eq!(
+                stats.quantized,
+                expect_sq8,
+                "dim {dim} should{} auto-quantize",
+                if expect_sq8 { "" } else { " not" }
+            );
+            engine.checkpoint().unwrap();
+        }
+        let engine = open(&dir, Quantization::Auto);
+        assert_eq!(engine.stats().quantized, expect_sq8, "survives restart");
+        assert_eq!(engine.stats().total_memories, 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+/// A deterministic unit vector of the requested width.
+fn unit_vector(dim: usize) -> Vec<f32> {
+    let mut v: Vec<f32> = (0..dim).map(|i| ((i % 17) as f32) - 8.0).collect();
+    let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+    for x in &mut v {
+        *x /= norm;
+    }
+    v
+}
+
 #[test]
 fn quantized_engine_end_to_end() {
     let dir = tmp_dir("quantized");
     {
-        let mut engine = open(&dir, true);
+        let mut engine = open(&dir, Quantization::Always);
         assert!(engine.stats().quantized);
         for text in [
             "the billing service uses stripe for payments",
@@ -135,7 +179,7 @@ fn quantized_engine_end_to_end() {
         engine.checkpoint().unwrap();
     }
     // Quantized index round-trips through the checkpoint.
-    let engine = open(&dir, true);
+    let engine = open(&dir, Quantization::Always);
     assert!(engine.stats().quantized);
     let hits = engine.recall(&RecallRequest {
         query: "payments provider".into(),
@@ -149,7 +193,7 @@ fn quantized_engine_end_to_end() {
 #[test]
 fn remember_batch_ingests_and_recalls() {
     let dir = tmp_dir("batch");
-    let mut engine = open(&dir, false);
+    let mut engine = open(&dir, Quantization::Never);
     let reqs: Vec<RememberRequest> = (0..10)
         .map(|i| RememberRequest {
             text: format!("batch document {i} about vector quantization"),

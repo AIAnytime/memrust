@@ -53,7 +53,7 @@ Pure vector search is where agent memory goes to die quietly:
 | Component | Implementation |
 |---|---|
 | Durability | JSON-lines WAL, fsync on append; recovery is checkpoint + WAL tail — the built indexes are serialized (atomic temp+rename) and restarts replay only post-checkpoint ops; auto-checkpoint bounds tail length |
-| Vector index | In-crate HNSW (M=16, ef=100/200) with the paper's diversity-based neighbor selection, contiguous flat vector storage, multi-accumulator SIMD-friendly dot kernels; optional SQ8 scalar quantization (1 byte/dim, distances computed on the codes) |
+| Vector index | In-crate HNSW (M=16, ef=100/200) with the paper's diversity-based neighbor selection, contiguous flat vector storage, multi-accumulator SIMD-friendly dot kernels; SQ8 scalar quantization (1 byte/dim, distances computed on the codes) applied automatically at >=1024 dims |
 | Lexical index | In-crate BM25 (k1=1.2, b=0.75) inverted index |
 | Entity graph | Heuristic extraction at ingest (names, identifiers, caps terms, tags); entity→records map + co-occurrence edges; 1-hop rarity-weighted traversal as a retrieval signal — no external graph DB |
 | Fusion | Reciprocal-rank fusion over three legs + exponential recency decay (1-week half-life) + importance boost; pre-filtering inside every index (filters applied during traversal/accumulation, not post-hoc) |
@@ -99,10 +99,15 @@ accuracy/speed dial.
 
 Dimension is a capacity ceiling, not a quality dial — retrieval quality comes
 from the model's training, not its width, and the cost of width is
-superlinear (2.7x the dims cost 4x the throughput here). Two practical
-consequences: prefer 768–1024 unless you've measured a gain from more, and
-note that **`--quantize` overtakes f32 on speed at ≥1024 dims** (memory
-bandwidth starts to dominate) while using 4x less memory.
+superlinear (2.7x the dims cost 4x the throughput here). So prefer 768–1024
+unless you've measured a gain from more.
+
+Note the ≥1024 rows: SQ8 is *faster* than f32 there, because memory bandwidth
+starts to dominate the extra decode arithmetic. That makes quantization free
+at those widths, so **memrust turns it on automatically for vectors ≥1024
+dims** and keeps f32 below that. Override with `--quantize` / `--no-quantize`.
+The mode is settled by the first vector stored (that is when the width is
+known) and is fixed for the life of the collection.
 
 ### Multi-agent memory
 

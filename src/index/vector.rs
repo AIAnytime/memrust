@@ -290,8 +290,8 @@ pub struct HnswConfig {
     pub m0: usize,
     pub ef_construction: usize,
     pub ef_search: usize,
-    /// Store SQ8-quantized codes instead of f32 vectors.
-    pub quantize: bool,
+    /// Whether to store SQ8-quantized codes instead of f32 vectors.
+    pub quantize: Quantization,
 }
 
 impl Default for HnswConfig {
@@ -301,7 +301,51 @@ impl Default for HnswConfig {
             m0: 32,
             ef_construction: 200,
             ef_search: 100,
-            quantize: false,
+            quantize: Quantization::default(),
+        }
+    }
+}
+
+/// Wide vectors are where SQ8 stops being a trade and becomes a free win:
+/// at this width and above, the memory-bandwidth saving outweighs the extra
+/// decode arithmetic, so quantized search measures as fast as (or faster
+/// than) f32 while using a quarter of the memory. Below it, f32 is faster,
+/// so `Auto` keeps full precision.
+pub const AUTO_QUANTIZE_DIM: usize = 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Quantization {
+    /// SQ8 once the collection's vectors are >= `AUTO_QUANTIZE_DIM` wide,
+    /// f32 below that. Decided by the first vector stored.
+    #[default]
+    Auto,
+    Always,
+    Never,
+}
+
+// Checkpoints written before quantization had three states stored a bool.
+// `false` meant "explicitly f32", so it maps to Never — an existing
+// collection must never silently change representation.
+impl<'de> Deserialize<'de> for Quantization {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Legacy(bool),
+            Mode(String),
+        }
+        match Raw::deserialize(d)? {
+            Raw::Legacy(true) => Ok(Quantization::Always),
+            Raw::Legacy(false) => Ok(Quantization::Never),
+            Raw::Mode(s) => match s.as_str() {
+                "auto" => Ok(Quantization::Auto),
+                "always" => Ok(Quantization::Always),
+                "never" => Ok(Quantization::Never),
+                other => Err(serde::de::Error::custom(format!(
+                    "unknown quantization mode: {other}"
+                ))),
+            },
         }
     }
 }
@@ -323,18 +367,12 @@ pub struct Hnsw {
 impl Hnsw {
     pub fn new(cfg: HnswConfig) -> Self {
         let level_mult = 1.0 / (cfg.m as f64).ln();
-        let store = if cfg.quantize {
-            VecStore::Sq8 {
-                dim: 0,
-                mins: Vec::new(),
-                deltas: Vec::new(),
-                codes: Vec::new(),
-            }
-        } else {
-            VecStore::F32 {
-                dim: 0,
-                data: Vec::new(),
-            }
+        // The storage mode can depend on the vector width, which isn't known
+        // until the first insert, so start as f32 and settle it in `add`
+        // while the store is still empty (no data to migrate).
+        let store = VecStore::F32 {
+            dim: 0,
+            data: Vec::new(),
         };
         Self {
             cfg,
@@ -357,7 +395,14 @@ impl Hnsw {
         self.live == 0
     }
 
+    /// Whether this index stores SQ8 codes. Before the first vector arrives
+    /// the storage mode is unsettled, so this reports the configured intent:
+    /// `Always` is known up front, while `Auto` depends on a width nothing
+    /// has supplied yet and so reads as not-quantized.
     pub fn is_quantized(&self) -> bool {
+        if self.store.len() == 0 {
+            return self.cfg.quantize == Quantization::Always;
+        }
         matches!(self.store, VecStore::Sq8 { .. })
     }
 
@@ -493,7 +538,30 @@ impl Hnsw {
         }
     }
 
+    /// Settle the storage mode from the first vector's width. Only ever runs
+    /// on an empty store, so switching representation costs nothing.
+    fn settle_storage(&mut self, dim: usize) {
+        let want_sq8 = match self.cfg.quantize {
+            Quantization::Always => true,
+            Quantization::Never => false,
+            Quantization::Auto => dim >= AUTO_QUANTIZE_DIM,
+        };
+        // Test the store itself, not `is_quantized()` — that reports intent
+        // for an empty index and would claim the switch was already made.
+        if want_sq8 && !matches!(self.store, VecStore::Sq8 { .. }) {
+            self.store = VecStore::Sq8 {
+                dim: 0,
+                mins: Vec::new(),
+                deltas: Vec::new(),
+                codes: Vec::new(),
+            };
+        }
+    }
+
     pub fn add(&mut self, v: Vec<f32>) -> usize {
+        if self.store.len() == 0 {
+            self.settle_storage(v.len());
+        }
         let id = self.store.len();
         let level = self.random_level();
         let query_copy = v.clone();
@@ -648,7 +716,7 @@ mod tests {
     #[test]
     fn quantized_hnsw_keeps_most_recall() {
         let cfg = HnswConfig {
-            quantize: true,
+            quantize: Quantization::Always,
             ..HnswConfig::default()
         };
         let recall = recall_vs_flat(cfg, 2000, 64, 50);
