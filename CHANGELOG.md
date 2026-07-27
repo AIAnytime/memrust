@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.3 — 2026-07-27
 
 - Dashboard supports light and dark themes with a header toggle. It follows
   the system preference by default and remembers an explicit choice

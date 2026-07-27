@@ -22,7 +22,7 @@ import urllib.request
 from typing import Any, Optional
 
 __all__ = ["MemrustClient", "MemrustError"]
-__version__ = "0.5.0"
+__version__ = "0.5.3"
 
 
 class MemrustError(RuntimeError):
