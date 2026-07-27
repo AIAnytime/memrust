@@ -578,7 +578,34 @@ impl MemoryEngine {
                 }
                 let texts: Vec<&str> = batch.iter().map(|r| r.text.as_str()).collect();
                 let summary_text = self.summarizer.summarize(&texts)?;
-                let embedding = self.embedder.embed(&summary_text)?;
+                // In a BYO-embedding collection the engine's embedder can't
+                // produce dimension-compatible vectors; the centroid of the
+                // source embeddings is both compatible and semantically the
+                // consolidation of those memories.
+                let engine_dim = self.embedder.dim();
+                let embedding = match self.index_dim {
+                    Some(dim) if dim != engine_dim => {
+                        let mut acc = vec![0.0f32; dim];
+                        let mut n = 0usize;
+                        for r in batch {
+                            if let Some(e) = &r.embedding {
+                                if e.len() == dim {
+                                    for (a, x) in acc.iter_mut().zip(e) {
+                                        *a += x;
+                                    }
+                                    n += 1;
+                                }
+                            }
+                        }
+                        if n > 0 {
+                            normalize(&mut acc);
+                            acc
+                        } else {
+                            self.embedder.embed(&summary_text)?
+                        }
+                    }
+                    _ => self.embedder.embed(&summary_text)?,
+                };
 
                 let mut tags: Vec<String> = Vec::new();
                 for r in batch {

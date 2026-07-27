@@ -8,3 +8,4 @@ sdks/typescript/dist
 sdks/typescript/node_modules
 sdks/python/dist
 __pycache__/
+/target-linux
