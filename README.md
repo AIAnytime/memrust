@@ -129,6 +129,18 @@ await memory.remember("user prefers concise answers", { kind: "semantic" });
 const hits = await memory.recall("what does the user prefer?");
 ```
 
+### Web dashboard
+
+`memrust serve` ships an embedded dashboard at **http://127.0.0.1:7700/** —
+no separate install, no external assets. Browse and add memories, run hybrid
+recall with the per-signal score breakdown visualized per hit, explore the
+entity graph (click an entity to run a relational search), and trigger
+lifecycle/checkpoint. Query URLs are shareable: `/?q=Project%20Phoenix&strategy=relational`.
+
+<p align="center">
+  <img src="assets/dashboard.png" alt="memrust dashboard — hybrid recall with per-signal scores" width="760">
+</p>
+
 ### Use it as memory for Claude Code
 
 ```bash

@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>memrust dashboard</title>
+<style>
+  /* Chart surface #1a1a19 and series colors are the validated dark-mode
+     palette (4 categorical slots, all six checks pass). */
+  :root {
+    color-scheme: dark;
+    --page: #121312;
+    --surface: #1a1a19;
+    --surface-2: #222321;
+    --border: #32332f;
+    --text: #f2f1ec;
+    --text-2: #b9b8ae;
+    --text-3: #83827a;
+    --accent: #f97316;
+    --accent-dim: #c2410c;
+    --sig-vector: #3987e5;
+    --sig-lexical: #d95926;
+    --sig-graph: #199e70;
+    --sig-recency: #c98500;
+    --good: #199e70;
+    --bad: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  header {
+    display: flex; align-items: center; gap: 14px; padding: 14px 22px;
+    border-bottom: 1px solid var(--border); background: var(--surface);
+    position: sticky; top: 0; z-index: 5;
+  }
+  .logo { width: 30px; height: 30px; flex: none; }
+  .brand b { font-size: 17px; letter-spacing: .2px; }
+  .brand span { display: block; color: var(--text-3); font-size: 11.5px; margin-top: -2px; }
+  .spacer { flex: 1; }
+  button {
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 13px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  button:hover { border-color: var(--text-3); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #1a1208; font-weight: 600; }
+  button.primary:hover { background: #fb8a3c; }
+  button.danger-ghost { color: var(--bad); padding: 3px 9px; font-size: 12px; }
+  main { max-width: 1200px; margin: 0 auto; padding: 20px 22px 60px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .tile .v { font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tile .l { color: var(--text-3); font-size: 11.5px; text-transform: uppercase; letter-spacing: .5px; margin-top: 2px; }
+  .tile .sub { color: var(--text-2); font-size: 12px; }
+
+  .cols { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--text-2); }
+
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  input, select, textarea {
+    background: var(--page); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13px;
+  }
+  input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent-dim); }
+  textarea { width: 100%; resize: vertical; }
+  .grow { flex: 1; min-width: 160px; }
+
+  .legend[hidden] { display: none; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 12px 0 4px; color: var(--text-2); font-size: 12px; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+
+  .hit, .memrow { border-top: 1px solid var(--border); padding: 12px 2px; }
+  .hit-top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .score { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 650; }
+  .chip {
+    display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px;
+    border: 1px solid var(--border); color: var(--text-2); background: var(--surface-2);
+  }
+  .chip.ent { cursor: pointer; }
+  .chip.ent:hover { border-color: var(--accent); color: var(--text); }
+  .meta { color: var(--text-3); font-size: 12px; }
+  .text { margin: 6px 0; overflow-wrap: anywhere; }
+
+  .signals { display: grid; grid-template-columns: repeat(4, minmax(90px, 150px)); gap: 10px; margin-top: 6px; }
+  .sig .lab { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .track { height: 6px; border-radius: 3px; background: #ffffff14; margin-top: 3px; overflow: hidden; }
+  .fill { height: 100%; border-radius: 3px; min-width: 0; }
+
+  .empty { color: var(--text-3); padding: 14px 2px; }
+  #toast {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 10px; padding: 9px 16px; font-size: 13px; opacity: 0; transition: opacity .25s; pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+  .ents { display: flex; flex-wrap: wrap; gap: 7px; }
+  .range-l { color: var(--text-3); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <svg class="logo" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+    <path d="M24 4 42 14v8L24 12 6 22v-8L24 4z" fill="#f97316"/>
+    <rect x="12" y="22" width="24" height="7" rx="2" fill="#2b3247"/>
+    <rect x="12" y="31" width="24" height="6" rx="2" fill="#f97316" opacity=".85"/>
+    <rect x="12" y="39" width="24" height="5" rx="2" fill="#6b7280" opacity=".6"/>
+  </svg>
+  <div class="brand"><b>memrust</b><span>memory infrastructure for AI agents</span></div>
+  <div class="spacer"></div>
+  <button id="btn-lifecycle" title="Sweep expired memories and consolidate old episodic ones">Run lifecycle</button>
+  <button id="btn-checkpoint" title="Persist index state and truncate the WAL">Checkpoint</button>
+  <button id="btn-refresh" class="primary">Refresh</button>
+</header>
+
+<main>
+  <div class="tiles" id="tiles"></div>
+
+  <div class="cols">
+    <div>
+      <div class="card">
+        <h2>Recall</h2>
+        <div class="row">
+          <input id="q" class="grow" placeholder="query — try an entity, an error code, or a question" autofocus>
+          <select id="strategy" title="Signal weighting">
+            <option value="balanced">balanced</option>
+            <option value="semantic">semantic</option>
+            <option value="lexical">lexical</option>
+            <option value="recent">recent</option>
+            <option value="relational">relational</option>
+          </select>
+          <select id="topk"><option>5</option><option selected>10</option><option>20</option></select>
+          <button id="btn-search" class="primary">Search</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input id="f-session" placeholder="session filter" style="width:150px">
+          <input id="f-agent" placeholder="recall as agent" style="width:150px" title="Sees shared + unowned + this agent's private memories">
+        </div>
+        <div class="legend" id="legend" hidden>
+          <span><i style="background:var(--sig-vector)"></i>vector</span>
+          <span><i style="background:var(--sig-lexical)"></i>lexical</span>
+          <span><i style="background:var(--sig-graph)"></i>graph</span>
+          <span><i style="background:var(--sig-recency)"></i>recency</span>
+        </div>
+        <div id="results"></div>
+      </div>
+
+      <div class="card">
+        <h2>Memories <span class="meta" id="mem-count"></span></h2>
+        <div id="memories"></div>
+        <div class="row" style="margin-top:10px"><button id="btn-more" hidden>Load more</button></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Remember</h2>
+        <textarea id="new-text" rows="3" placeholder="what should the engine remember?"></textarea>
+        <div class="row" style="margin-top:8px">
+          <select id="new-kind" class="grow">
+            <option>episodic</option><option>semantic</option><option>working</option>
+            <option>reflection</option><option>tool_call</option><option>procedural</option>
+          </select>
+          <select id="new-vis" class="grow" title="private is only recallable by the owning agent">
+            <option value="">visibility: auto</option><option>shared</option><option>private</option>
+          </select>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input id="new-tags" class="grow" placeholder="tags, comma separated">
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input id="new-session" class="grow" placeholder="session id">
+          <input id="new-agent" class="grow" placeholder="agent id">
+        </div>
+        <div class="row" style="margin-top:8px; align-items:center">
+          <span class="range-l">importance</span>
+          <input id="new-imp" type="range" min="0" max="1" step="0.05" value="0.5" class="grow">
+          <span class="range-l" id="imp-val">0.50</span>
+        </div>
+        <div class="row" style="margin-top:10px"><button id="btn-remember" class="primary grow">Remember</button></div>
+      </div>
+
+      <div class="card">
+        <h2>Entities <span class="meta">click to explore</span></h2>
+        <div class="ents" id="entities"><span class="empty">none yet</span></div>
+      </div>
+    </div>
+  </div>
+</main>
+<div id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = (n, d = 4) => Number(n).toFixed(d);
+let memOffset = 0;
+const PAGE = 25;
+
+function toast(msg, ok = true) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.style.borderColor = ok ? "var(--good)" : "var(--bad)";
+  t.classList.add("show");
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove("show"), 2600);
+}
+
+async function api(method, path, body) {
+  const resp = await fetch(path, {
+    method,
+    headers: body ? { "content-type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!resp.ok) throw new Error(`${resp.status}: ${await resp.text()}`);
+  return resp.json();
+}
+
+function ago(ms) {
+  const s = Math.max(0, (Date.now() - ms) / 1000);
+  if (s < 60) return `${s | 0}s ago`;
+  if (s < 3600) return `${(s / 60) | 0}m ago`;
+  if (s < 86400) return `${(s / 3600) | 0}h ago`;
+  return `${(s / 86400) | 0}d ago`;
+}
+
+function recordMeta(r) {
+  const bits = [`<span class="chip">${esc(r.kind)}</span>`];
+  if (r.visibility === "private") bits.push(`<span class="chip">private</span>`);
+  for (const t of r.tags ?? []) bits.push(`<span class="chip">#${esc(t)}</span>`);
+  const m = [];
+  if (r.session_id) m.push(`session ${esc(r.session_id)}`);
+  if (r.agent_id) m.push(`agent ${esc(r.agent_id)}`);
+  m.push(ago(r.created_at));
+  bits.push(`<span class="meta">${m.join(" · ")}</span>`);
+  return bits.join(" ");
+}
+
+// ---- stats tiles ----------------------------------------------------------
+async function loadStats() {
+  const { stats: s } = await api("GET", "/health");
+  $("tiles").innerHTML = [
+    { v: s.total_memories, l: "memories" },
+    { v: s.vector_indexed, l: "vector indexed" },
+    { v: s.lexical_indexed, l: "lexical indexed" },
+    { v: s.entities, l: "graph entities" },
+    { v: s.wal_tail_ops, l: "wal tail ops" },
+    { v: `${s.embedding_dim}<span class="sub"> dim · ${s.quantized ? "SQ8" : "f32"}</span>`, l: "embeddings" },
+  ].map((t) => `<div class="tile"><div class="v">${t.v}</div><div class="l">${t.l}</div></div>`).join("");
+}
+
+// ---- recall ---------------------------------------------------------------
+async function search() {
+  const query = $("q").value.trim();
+  if (!query) return;
+  const body = {
+    query,
+    strategy: $("strategy").value,
+    top_k: Number($("topk").value),
+  };
+  const session = $("f-session").value.trim();
+  if (session) body.filter = { session_id: session };
+  const agent = $("f-agent").value.trim();
+  if (agent) body.as_agent = agent;
+
+  const { hits } = await api("POST", "/v1/recall", body);
+  $("legend").hidden = hits.length === 0;
+  if (hits.length === 0) {
+    $("results").innerHTML = `<div class="empty">no memories matched</div>`;
+    return;
+  }
+  // Normalize each RRF-scaled signal to its max across this result set so
+  // the tracks compare hits; recency is already absolute 0..1.
+  const max = { vector: 0, lexical: 0, graph: 0 };
+  for (const h of hits)
+    for (const k of Object.keys(max)) max[k] = Math.max(max[k], h.signals[k]);
+  const track = (name, value, scale) => `
+    <div class="sig" title="${name} signal: ${fmt(value, 4)}">
+      <div class="lab"><span>${name}</span><span>${fmt(value, name === "recency" ? 2 : 4)}</span></div>
+      <div class="track"><div class="fill" style="width:${Math.round(scale * 100)}%;background:var(--sig-${name})"></div></div>
+    </div>`;
+
+  $("results").innerHTML = hits.map((h) => `
+    <div class="hit">
+      <div class="hit-top">
+        <span class="score" title="fused retrieval score">${fmt(h.score)}</span>
+        ${h.signals.rerank > 0 ? `<span class="chip" title="reranker relevance">rerank ${fmt(h.signals.rerank, 2)}</span>` : ""}
+        ${recordMeta(h.record)}
+        <span class="spacer"></span>
+        <button class="danger-ghost" onclick="forget('${h.record.id}')">forget</button>
+      </div>
+      <div class="text">${esc(h.record.text)}</div>
+      <div class="signals">
+        ${track("vector", h.signals.vector, max.vector ? h.signals.vector / max.vector : 0)}
+        ${track("lexical", h.signals.lexical, max.lexical ? h.signals.lexical / max.lexical : 0)}
+        ${track("graph", h.signals.graph, max.graph ? h.signals.graph / max.graph : 0)}
+        ${track("recency", h.signals.recency, h.signals.recency)}
+      </div>
+    </div>`).join("");
+}
+
+// ---- browse ---------------------------------------------------------------
+async function loadMemories(reset = true) {
+  if (reset) memOffset = 0;
+  const { total, records } = await api("GET", `/v1/memories?offset=${memOffset}&limit=${PAGE}`);
+  $("mem-count").textContent = `· ${total} live`;
+  const rows = records.map((r) => `
+    <div class="memrow">
+      <div class="hit-top">
+        ${recordMeta(r)}
+        <span class="spacer"></span>
+        <button class="danger-ghost" onclick="forget('${r.id}')">forget</button>
+      </div>
+      <div class="text">${esc(r.text)}</div>
+    </div>`).join("");
+  if (reset) $("memories").innerHTML = rows || `<div class="empty">nothing remembered yet — add a memory on the right</div>`;
+  else $("memories").insertAdjacentHTML("beforeend", rows);
+  memOffset += records.length;
+  $("btn-more").hidden = memOffset >= total;
+}
+
+// ---- entities -------------------------------------------------------------
+async function loadEntities() {
+  const { entities } = await api("GET", "/v1/entities?limit=40");
+  $("entities").innerHTML = entities.length
+    ? entities.map((e) =>
+        `<span class="chip ent" onclick="exploreEntity('${esc(e.name)}')" title="relational search">${esc(e.name)} <span class="meta">${e.count}</span></span>`).join("")
+    : `<span class="empty">none yet</span>`;
+}
+
+function exploreEntity(name) {
+  $("q").value = name;
+  $("strategy").value = "relational";
+  search().catch((e) => toast(e.message, false));
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// ---- actions --------------------------------------------------------------
+async function forget(id) {
+  try {
+    await api("POST", "/v1/forget", { id });
+    toast("memory forgotten");
+    refresh();
+  } catch (e) { toast(e.message, false); }
+}
+
+async function remember() {
+  const text = $("new-text").value.trim();
+  if (!text) return toast("memory text is empty", false);
+  const body = { text, kind: $("new-kind").value, importance: Number($("new-imp").value) };
+  const tags = $("new-tags").value.split(",").map((t) => t.trim()).filter(Boolean);
+  if (tags.length) body.tags = tags;
+  if ($("new-session").value.trim()) body.session_id = $("new-session").value.trim();
+  if ($("new-agent").value.trim()) body.agent_id = $("new-agent").value.trim();
+  if ($("new-vis").value) body.visibility = $("new-vis").value;
+  try {
+    await api("POST", "/v1/remember", body);
+    $("new-text").value = "";
+    toast("remembered");
+    refresh();
+  } catch (e) { toast(e.message, false); }
+}
+
+function refresh() {
+  loadStats().catch(() => {});
+  loadMemories(true).catch(() => {});
+  loadEntities().catch(() => {});
+}
+
+$("btn-search").onclick = () => search().catch((e) => toast(e.message, false));
+$("q").addEventListener("keydown", (e) => { if (e.key === "Enter") $("btn-search").click(); });
+$("btn-remember").onclick = remember;
+$("btn-refresh").onclick = refresh;
+$("btn-more").onclick = () => loadMemories(false).catch((e) => toast(e.message, false));
+$("new-imp").oninput = () => { $("imp-val").textContent = Number($("new-imp").value).toFixed(2); };
+$("btn-lifecycle").onclick = async () => {
+  try {
+    const { report } = await api("POST", "/v1/lifecycle/run");
+    toast(`lifecycle: swept ${report.expired_swept}, consolidated ${report.batches_consolidated} batch(es)`);
+    refresh();
+  } catch (e) { toast(e.message, false); }
+};
+$("btn-checkpoint").onclick = async () => {
+  try {
+    await api("POST", "/v1/checkpoint");
+    toast("checkpointed — WAL truncated");
+    refresh();
+  } catch (e) { toast(e.message, false); }
+};
+
+refresh();
+// Shareable query URLs: /?q=...&strategy=...
+const params = new URLSearchParams(location.search);
+if (params.get("q")) {
+  $("q").value = params.get("q");
+  if (params.get("strategy")) $("strategy").value = params.get("strategy");
+  search().catch((e) => toast(e.message, false));
+}
+</script>
+</body>
+</html>

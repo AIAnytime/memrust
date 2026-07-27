@@ -143,6 +143,18 @@ impl GraphIndex {
         self.entity_records.len()
     }
 
+    /// Most-mentioned entities, count-descending (name-ascending tiebreak).
+    pub fn top_entities(&self, limit: usize) -> Vec<(String, usize)> {
+        let mut all: Vec<(String, usize)> = self
+            .entity_records
+            .iter()
+            .map(|(e, recs)| (e.clone(), recs.len()))
+            .collect();
+        all.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        all.truncate(limit);
+        all
+    }
+
     pub fn add(&mut self, id: Uuid, entities: &[String]) {
         for e in entities {
             self.entity_records.entry(e.clone()).or_default().push(id);

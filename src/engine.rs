@@ -675,6 +675,26 @@ impl MemoryEngine {
         Ok(added)
     }
 
+    /// Newest-first page of live (non-expired) memories, for browsing UIs.
+    /// Returns (total live, page).
+    pub fn list_memories(&self, offset: usize, limit: usize) -> (usize, Vec<MemoryRecord>) {
+        let now = now_ms();
+        let mut live: Vec<&MemoryRecord> = self
+            .records
+            .values()
+            .filter(|r| !is_expired(r, now))
+            .collect();
+        live.sort_by_key(|r| std::cmp::Reverse(r.created_at));
+        let total = live.len();
+        let page = live.into_iter().skip(offset).take(limit).cloned().collect();
+        (total, page)
+    }
+
+    /// Most-mentioned entities in the graph index.
+    pub fn top_entities(&self, limit: usize) -> Vec<(String, usize)> {
+        self.graph.top_entities(limit)
+    }
+
     pub fn stats(&self) -> EngineStats {
         EngineStats {
             total_memories: self.records.len(),

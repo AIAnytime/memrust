@@ -4,6 +4,7 @@ version = "0.5.0"
 edition = "2021"
 description = "Agent-native memory engine: hybrid retrieval (HNSW + BM25 + entity graph + recency) behind remember/recall/forget, with HTTP and MCP interfaces"
 license = "Apache-2.0"
+repository = "https://github.com/AIAnytime/memrust"
 readme = "README.md"
 keywords = ["ai", "agents", "memory", "vector-search", "mcp"]
 categories = ["database-implementations", "data-structures"]

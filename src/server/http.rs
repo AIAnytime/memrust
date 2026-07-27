@@ -8,12 +8,16 @@
 //! POST /v1/lifecycle/run                   -> { report: LifecycleReport }
 //! POST /v1/snapshot       { session_id? }  -> { snapshot: Snapshot }
 //! POST /v1/restore        { records }      -> { restored: usize }
+//! GET  /v1/memories?offset&limit           -> { total, records } (newest first)
+//! GET  /v1/entities?limit                  -> { entities: [{name, count}] }
 //! GET  /health                             -> EngineStats
+//! GET  /                                   -> embedded web dashboard
 
 use std::sync::{Arc, RwLock};
 
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::StatusCode;
+use axum::response::Html;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
@@ -33,7 +37,11 @@ type Shared = Arc<RwLock<MemoryEngine>>;
 
 pub fn router(engine: Shared) -> Router {
     Router::new()
+        .route("/", get(dashboard))
+        .route("/dashboard", get(dashboard))
         .route("/health", get(health))
+        .route("/v1/memories", get(list_memories))
+        .route("/v1/entities", get(entities))
         .route("/v1/remember", post(remember))
         .route("/v1/remember_batch", post(remember_batch))
         .route("/v1/checkpoint", post(checkpoint))
@@ -50,6 +58,59 @@ pub async fn serve(engine: Shared, addr: &str) -> anyhow::Result<()> {
     println!("memrust listening on http://{addr}");
     axum::serve(listener, router(engine)).await?;
     Ok(())
+}
+
+/// The embedded web UI (single self-contained HTML file, no external assets).
+async fn dashboard() -> Html<&'static str> {
+    Html(include_str!("dashboard.html"))
+}
+
+#[derive(Deserialize)]
+struct ListQuery {
+    #[serde(default)]
+    offset: usize,
+    #[serde(default = "default_page")]
+    limit: usize,
+}
+
+fn default_page() -> usize {
+    50
+}
+
+async fn list_memories(
+    State(engine): State<Shared>,
+    Query(q): Query<ListQuery>,
+) -> Json<serde_json::Value> {
+    let (total, records) = engine
+        .read()
+        .unwrap()
+        .list_memories(q.offset, q.limit.min(200));
+    let records: Vec<_> = records.into_iter().map(without_embedding).collect();
+    Json(json!({ "total": total, "records": records }))
+}
+
+#[derive(Deserialize)]
+struct EntitiesQuery {
+    #[serde(default = "default_entities")]
+    limit: usize,
+}
+
+fn default_entities() -> usize {
+    40
+}
+
+async fn entities(
+    State(engine): State<Shared>,
+    Query(q): Query<EntitiesQuery>,
+) -> Json<serde_json::Value> {
+    let entities: Vec<serde_json::Value> = engine
+        .read()
+        .unwrap()
+        .top_entities(q.limit.min(200))
+        .into_iter()
+        .map(|(name, count)| json!({ "name": name, "count": count }))
+        .collect();
+    Json(json!({ "entities": entities }))
 }
 
 async fn health(State(engine): State<Shared>) -> Json<serde_json::Value> {
