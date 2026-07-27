@@ -640,7 +640,7 @@ impl Hnsw {
     }
 
     pub fn search(&self, query: &[f32], k: usize) -> Vec<(usize, f32)> {
-        self.search_filtered(query, k, None)
+        self.search_filtered(query, k, None, None)
     }
 
     /// Search restricted to nodes passing `pred` (pre-filtering; see
@@ -650,6 +650,7 @@ impl Hnsw {
         query: &[f32],
         k: usize,
         pred: Option<&dyn Fn(usize) -> bool>,
+        ef_override: Option<usize>,
     ) -> Vec<(usize, f32)> {
         let Some(entry) = self.entry else {
             return Vec::new();
@@ -660,7 +661,7 @@ impl Hnsw {
             ep = self.greedy(&q, ep, l);
         }
         // Over-fetch so tombstones don't starve the result set.
-        let ef = self.cfg.ef_search.max(k * 2);
+        let ef = ef_override.unwrap_or(self.cfg.ef_search).max(k * 2);
         // A selective filter can otherwise walk the whole graph; only an
         // externally filtered search gets the visit cap.
         let max_visits = if pred.is_some() { ef * 32 } else { usize::MAX };

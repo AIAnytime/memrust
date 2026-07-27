@@ -246,7 +246,14 @@ def bench_memrust(data, qs, truth, url="http://127.0.0.1:7900"):
     def query(q):
         if not index_of:
             index_of.update({rid: i for i, rid in enumerate(order)})
-        hits = post("/v1/recall", {"query": "item", "query_embedding": q.tolist(),
+        # Empty query text on purpose: every other engine here does pure
+        # vector search, so memrust's lexical and graph legs are given
+        # nothing to match and this measures the same work. (With text, BM25
+        # would also score documents and fusion would reorder them — that is
+        # memrust's real behavior, and agent_recall.py is where it is
+        # measured. Comparing it against vector-only ground truth would
+        # penalize memrust for answering a different, better question.)
+        hits = post("/v1/recall", {"query": "", "query_embedding": q.tolist(),
                                    "top_k": TOP_K, "strategy": "semantic"})["hits"]
         return [index_of[h["record"]["id"]] for h in hits]
 

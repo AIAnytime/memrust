@@ -149,6 +149,17 @@ pub struct MemoryFilter {
 }
 
 impl MemoryFilter {
+    /// True when the filter constrains nothing, letting recall skip the
+    /// per-candidate predicate entirely.
+    pub fn is_empty(&self) -> bool {
+        self.kinds.is_empty()
+            && self.tags.is_empty()
+            && self.session_id.is_none()
+            && self.agent_id.is_none()
+            && self.since.is_none()
+            && self.until.is_none()
+    }
+
     pub fn matches(&self, rec: &MemoryRecord) -> bool {
         if !self.kinds.is_empty() && !self.kinds.contains(&rec.kind) {
             return false;
@@ -203,6 +214,10 @@ pub struct RecallRequest {
     /// within the visible set.
     #[serde(default)]
     pub as_agent: Option<String>,
+    /// Per-query HNSW beam width. Higher searches harder: more accurate,
+    /// slower. Unset uses the index default (100).
+    #[serde(default)]
+    pub ef_search: Option<usize>,
 }
 
 /// Per-signal contributions, so agents (and humans) can see *why* a memory

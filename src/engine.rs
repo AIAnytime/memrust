@@ -97,6 +97,9 @@ pub struct MemoryEngine {
     index_dim: Option<usize>,
     graph: GraphIndex,
     reranker: Option<Box<dyn Reranker>>,
+    /// Live records carrying an `expires_at`. When zero, recall can skip the
+    /// per-candidate expiry check.
+    expiring: usize,
 }
 
 impl MemoryEngine {
@@ -146,6 +149,7 @@ impl MemoryEngine {
             index_cfg,
             graph: GraphIndex::default(),
             reranker: None,
+            expiring: 0,
         };
         // Checkpoint + tail recovery: load the last serialized state, then
         // replay only the WAL ops that landed after it. Replay is idempotent
@@ -160,6 +164,11 @@ impl MemoryEngine {
             engine.loc = state.loc;
             engine.graph = state.graph;
             engine.index_dim = state.index_dim;
+            engine.expiring = engine
+                .records
+                .values()
+                .filter(|r| r.expires_at.is_some())
+                .count();
             // Pre-v0.4 checkpoints have no graph; rebuild it from records.
             if engine.graph.is_empty() && !engine.records.is_empty() {
                 let ids: Vec<Uuid> = engine.records.keys().copied().collect();
@@ -208,6 +217,9 @@ impl MemoryEngine {
     }
 
     fn index_record(&mut self, mut record: MemoryRecord) {
+        if record.expires_at.is_some() {
+            self.expiring += 1;
+        }
         if record.entities.is_empty() {
             record.entities = extract_entities(&record.text, &record.tags);
         }
@@ -245,6 +257,9 @@ impl MemoryEngine {
             return false;
         };
         if let Some(rec) = self.records.get(id) {
+            if rec.expires_at.is_some() {
+                self.expiring = self.expiring.saturating_sub(1);
+            }
             let ents = rec.entities.clone();
             self.graph.remove(*id, &ents);
         }
@@ -390,6 +405,12 @@ impl MemoryEngine {
         // Pre-filtering: the filter (and expiry) is applied *inside* each
         // index search, so selective filters get full result sets instead of
         // whatever survives filtering a global top-100.
+        //
+        // The predicate costs a hash lookup and a dynamic call on every node
+        // the traversal visits, so when there is nothing to filter — no
+        // filter, no agent scoping, nothing expiring — it is skipped
+        // entirely and the index uses its own cheap tombstone check.
+        let needs_filter = !req.filter.is_empty() || req.as_agent.is_some() || self.expiring > 0;
         let passes = |id: &Uuid| -> bool {
             self.records
                 .get(id)
@@ -420,10 +441,12 @@ impl MemoryEngine {
             },
         };
         let vec_pred = |i: usize| passes(&self.vec_ids[i]);
+        let vec_filter: Option<&dyn Fn(usize) -> bool> =
+            if needs_filter { Some(&vec_pred) } else { None };
         let vec_hits = match query_vec {
             Some(q) if Some(q.len()) == self.index_dim => {
                 self.vec_index
-                    .search_filtered(&q, CANDIDATES, Some(&vec_pred))
+                    .search_filtered(&q, CANDIDATES, vec_filter, req.ef_search)
             }
             Some(q) => {
                 if self.index_dim.is_some() {
@@ -439,9 +462,11 @@ impl MemoryEngine {
         };
         // Signal 2: lexical matches from BM25.
         let text_pred = |i: usize| passes(&self.text_ids[i]);
+        let text_filter: Option<&dyn Fn(usize) -> bool> =
+            if needs_filter { Some(&text_pred) } else { None };
         let text_hits = self
             .text_index
-            .search_filtered(&req.query, CANDIDATES, Some(&text_pred));
+            .search_filtered(&req.query, CANDIDATES, text_filter);
         // Signal 3: graph traversal — records sharing entities with the
         // query, or reachable through co-occurring entities (1 hop).
         let query_entities = extract_entities(&req.query, &[]);
@@ -473,7 +498,10 @@ impl MemoryEngine {
             fused.entry(*id).or_insert(ZERO).graph = 1.0 / (RRF_K + rank as f32 + 1.0);
         }
 
-        let mut hits: Vec<RecallHit> = fused
+        // Score against record *references*: cloning every fused candidate
+        // here would copy a few hundred records (embeddings included) just to
+        // discard all but top_k a few lines later.
+        let mut scored: Vec<(Uuid, f32, RecallSignals)> = fused
             .into_iter()
             .filter_map(|(id, mut signals)| {
                 let record = self.records.get(&id)?;
@@ -490,15 +518,27 @@ impl MemoryEngine {
                     + w_graph * signals.graph
                     + w_rec * signals.recency / RRF_K
                     + signals.importance;
-                Some(RecallHit {
-                    record: record.clone(),
-                    score,
-                    signals,
-                })
+                Some((id, score, signals))
             })
             .collect();
 
-        hits.sort_by(|a, b| b.score.total_cmp(&a.score));
+        scored.sort_by(|a, b| b.1.total_cmp(&a.1));
+        // A reranker reorders a wider pool, so materialize that much.
+        let keep = if self.reranker.is_some() && req.rerank != Some(false) {
+            (top_k * 3).min(scored.len())
+        } else {
+            top_k.min(scored.len())
+        };
+        scored.truncate(keep);
+
+        let mut hits: Vec<RecallHit> = scored
+            .into_iter()
+            .map(|(id, score, signals)| RecallHit {
+                record: self.records[&id].clone(),
+                score,
+                signals,
+            })
+            .collect();
 
         // Optional rerank stage: score the fused top pool with the
         // configured reranker and order by relevance. `score` keeps the
@@ -552,6 +592,7 @@ impl MemoryEngine {
         self.loc.clear();
         self.records.clear();
         self.index_dim = None;
+        self.expiring = 0;
         for r in records {
             self.index_record(r);
         }

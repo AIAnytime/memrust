@@ -192,6 +192,9 @@ curl -X POST localhost:7700/v1/recall -H 'content-type: application/json' \
        "filter":{"kinds":["episodic"],"since":1735689600000}}'
 ```
 
+Pass `ef_search` on a recall to widen the HNSW beam for that query alone —
+higher is more accurate and slower, unset uses the index default (100).
+
 Recall strategies: `balanced` (default), `semantic`, `lexical`, `recent`,
 `relational` (graph-first: things *connected* to the query's entities) —
 they reweight the fusion, they don't switch indexes off, so an exact-ID query
@@ -298,20 +301,45 @@ against exact brute-force ground truth.
 
 | Engine | Ingest/s | Query p50 | Query p95 | recall@10 |
 |---|---|---|---|---|
-| FAISS (in-process lib) | 34,937 | **0.07 ms** | 0.10 ms | 1.000 |
-| LanceDB (embedded) | **84,408** | 8.28 ms | 9.39 ms | 1.000 |
-| Chroma (in-process) | 5,984 | 0.50 ms | 0.58 ms | 1.000 |
-| pgvector (server, SQL) | 5,093 | 0.48 ms | 0.58 ms | 1.000 |
-| Qdrant (server, HTTP) | 4,751 | 1.95 ms | 2.90 ms | 1.000 |
-| **memrust (server, HTTP)** | 997 | 1.81 ms | 2.16 ms | 0.985 |
+| FAISS (in-process lib) | 35,625 | **0.06 ms** | 0.08 ms | 1.000 |
+| LanceDB (embedded) | **99,238** | 8.60 ms | 9.70 ms | 1.000 |
+| Chroma (in-process) | 5,907 | 0.49 ms | 0.57 ms | 1.000 |
+| pgvector (server, SQL) | 5,017 | **0.46 ms** | 0.53 ms | 1.000 |
+| Qdrant (server, HTTP) | 2,475 | 2.08 ms | 2.73 ms | 1.000 |
+| **memrust (server, HTTP)** | 988 | 0.64 ms | 0.75 ms | 1.000 |
 
-Read that honestly: **on pure vector search memrust is mid-pack.** Query
-latency is on par with Qdrant, and both trail in-process libraries because a
-network round-trip costs more than the search itself. Ingest is the weak spot
-— memrust fsyncs every write for crash-safety, where the others buffer; batch
-ingest amortizes one fsync across the batch, which is what makes 997/s
-possible at all, but it is still an order of magnitude behind. Recall is 1.5
-points under exact. If raw ANN throughput is your problem, use FAISS.
+Read that honestly. **Query latency is competitive** — second-best among the
+servers, and the in-process libraries win partly because they never touch a
+socket. **Recall matches everyone at 1.000.** **Ingest is the weak spot**, an
+order of magnitude behind: memrust fsyncs every write for crash-safety where
+the others buffer. Batch ingest amortizes one fsync per batch (that is what
+makes 988/s possible; single-record writes manage ~176/s), but the remaining
+cost is HNSW graph construction, not durability — measured by holding fsyncs
+constant and varying batch size, where throughput flattens past batch=100.
+
+Ingest figures move run to run — Qdrant measured between 2,475/s and 4,887/s
+across runs on the same box. Treat one-significant-figure differences as noise.
+
+If raw ANN throughput on a static corpus is your problem, use FAISS.
+
+### Concurrency
+
+Reads share the engine lock; a write takes it exclusively. 20k vectors, 384
+dims, `benches/concurrency.py`:
+
+| Concurrent readers | Writer | QPS | p50 | scaling |
+|---|---|---|---|---|
+| 1 | – | 506 | 1.87 ms | 1.0x |
+| 2 | – | 942 | 1.98 ms | 1.9x |
+| 4 | – | 1,726 | 2.19 ms | 3.4x |
+| 8 | – | 2,263 | 3.36 ms | 4.5x |
+| 4 | yes | 467 | 8.52 ms | — |
+
+Reads scale sub-linearly but usefully. **A single concurrent writer costs 73%
+of read throughput**, because the WAL fsync happens while the exclusive lock
+is held, so every reader waits out the disk flush. That is the next thing to
+fix (group-commit across concurrent writers, or moving the flush outside the
+lock) and it is a known limitation today, not a solved problem.
 
 ### Agent memory: where the architecture actually matters
 

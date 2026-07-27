@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Recall is ~3x faster and recall@10 is now 1.000** (was 1.92 ms / 0.985 at
+  20k vectors). Two causes, both found by profiling rather than guessing: the
+  filter predicate ran on every visited node even when nothing needed
+  filtering, and it silently engaged a traversal visit cap that cost recall.
+  Recall now skips the predicate entirely when there is no filter, no agent
+  scoping and nothing expiring.
+- Recall no longer clones every fused candidate (hundreds of records,
+  embeddings included) before discarding all but top-k; records are
+  materialized after ranking.
+- `ef_search` is settable per recall request, trading latency for accuracy
+  without a server restart.
+- `benches/concurrency.py` measures read scaling and write interference, and
+  `memrust bench --engine` measures end-to-end recall latency without HTTP.
+
 - **Bulk ingest no longer fails on real batches.** The HTTP body limit was
   axum's 2 MB default, which rejected any batch bigger than ~400 memories at
   384 dims (413 Payload Too Large). Raised to 256 MB.

@@ -16,7 +16,7 @@ USAGE:
     memrust serve [--addr 127.0.0.1:7700] [--data-dir ./memrust-data] [options]
     memrust mcp   [--data-dir ./memrust-data] [--agent-id <name>] [options]
     memrust demo
-    memrust bench [--n 20000] [--dim 256]
+    memrust bench [--n 20000] [--dim 256] [--engine]
 
 SCALE OPTIONS:
     --quantize      force SQ8 codes in the vector index (1 byte/dim instead of 4)
@@ -135,7 +135,78 @@ fn open_engine(args: &[String]) -> Result<Shared> {
 ///   method and a lower bound rather than an expectation
 ///
 /// Run with --release for meaningful numbers.
+/// End-to-end recall latency through the whole engine (fusion, filters,
+/// record materialization) rather than the raw vector index, so the gap
+/// against the HTTP number is attributable to transport alone.
+fn bench_engine(args: &[String]) -> Result<()> {
+    use memrust::index::vector::normalize;
+    use memrust::types::{RecallRequest, RecallStrategy, RememberRequest};
+    use std::time::Instant;
+
+    let n = numeric_flag(args, "--n", 20_000)? as usize;
+    let dim = numeric_flag(args, "--dim", 384)? as usize;
+    let queries = 200usize;
+
+    let mut seed = 42u64;
+    let mut rand_vec = |dim: usize| -> Vec<f32> {
+        let mut v: Vec<f32> = (0..dim)
+            .map(|_| {
+                seed = seed
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                ((seed >> 33) as f32 / (1u64 << 31) as f32) - 0.5
+            })
+            .collect();
+        normalize(&mut v);
+        v
+    };
+
+    let dir = std::env::temp_dir().join(format!("memrust-engine-bench-{}", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    let mut engine = MemoryEngine::open(&dir)?;
+
+    let items: Vec<RememberRequest> = (0..n)
+        .map(|i| RememberRequest {
+            text: format!("m{i}"),
+            embedding: Some(rand_vec(dim)),
+            ..Default::default()
+        })
+        .collect();
+    let t = Instant::now();
+    for chunk in items.chunks(1000) {
+        engine.remember_batch(chunk.to_vec())?;
+    }
+    let ingest = t.elapsed();
+
+    let qs: Vec<Vec<f32>> = (0..queries).map(|_| rand_vec(dim)).collect();
+    let mut lat: Vec<f64> = Vec::with_capacity(queries);
+    for q in &qs {
+        let req = RecallRequest {
+            query: "m".into(),
+            query_embedding: Some(q.clone()),
+            top_k: Some(10),
+            strategy: RecallStrategy::Semantic,
+            ..Default::default()
+        };
+        let t = Instant::now();
+        std::hint::black_box(engine.recall(&req));
+        lat.push(t.elapsed().as_secs_f64() * 1000.0);
+    }
+    lat.sort_by(f64::total_cmp);
+    println!(
+        "engine bench: n={n} dim={dim}\n  ingest {:.0} rec/s (in-process)\n  recall p50 {:.3} ms  p95 {:.3} ms  (full engine path, no HTTP)",
+        n as f64 / ingest.as_secs_f64(),
+        lat[lat.len() / 2],
+        lat[(lat.len() as f64 * 0.95) as usize],
+    );
+    std::fs::remove_dir_all(&dir).ok();
+    Ok(())
+}
+
 fn bench(args: &[String]) -> Result<()> {
+    if args.iter().any(|a| a == "--engine") {
+        return bench_engine(args);
+    }
     use memrust::index::vector::{normalize, FlatIndex, Hnsw};
     use std::time::Instant;
 
