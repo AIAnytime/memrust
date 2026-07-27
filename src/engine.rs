@@ -306,13 +306,38 @@ impl MemoryEngine {
                 embeddings[i] = Some(e);
             }
         }
-        reqs.into_iter()
+        let records: Vec<MemoryRecord> = reqs
+            .into_iter()
             .zip(embeddings)
-            .map(|(req, e)| self.commit(req, e.expect("embedding filled above")))
-            .collect()
+            .map(|(req, e)| self.build_record(req, e.expect("embedding filled above")))
+            .collect();
+
+        // Group commit: every record hits the log, then one fsync covers them all.
+        let ops: Vec<WalOp> = records
+            .iter()
+            .map(|r| WalOp::Remember {
+                record: Box::new(r.clone()),
+            })
+            .collect();
+        self.wal.append_batch(&ops)?;
+        for record in &records {
+            self.index_record(record.clone());
+        }
+        Ok(records)
     }
 
     fn commit(&mut self, req: RememberRequest, embedding: Vec<f32>) -> Result<MemoryRecord> {
+        let record = self.build_record(req, embedding);
+        self.wal.append(&WalOp::Remember {
+            record: Box::new(record.clone()),
+        })?;
+        self.index_record(record.clone());
+        Ok(record)
+    }
+
+    /// Build a record without persisting it, so batch ingest can group the
+    /// WAL writes behind one fsync.
+    fn build_record(&self, req: RememberRequest, embedding: Vec<f32>) -> MemoryRecord {
         let now = now_ms();
         let expires_at = match req.ttl_seconds {
             Some(secs) => Some(now + secs as i64 * 1000),
@@ -327,7 +352,7 @@ impl MemoryEngine {
         } else {
             Visibility::Shared
         });
-        let record = MemoryRecord {
+        MemoryRecord {
             id: Uuid::new_v4(),
             kind: req.kind,
             text: req.text,
@@ -342,12 +367,7 @@ impl MemoryEngine {
             visibility,
             metadata: req.metadata,
             embedding: Some(embedding),
-        };
-        self.wal.append(&WalOp::Remember {
-            record: Box::new(record.clone()),
-        })?;
-        self.index_record(record.clone());
-        Ok(record)
+        }
     }
 
     pub fn forget(&mut self, id: Uuid) -> Result<bool> {

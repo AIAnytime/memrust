@@ -14,3 +14,6 @@ __pycache__/
 .DS_Store
 *.egg-info/
 *.pdf
+bench-results.json
+bench-agent-recall.json
+bench-agent-embeddings.npz

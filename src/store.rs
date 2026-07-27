@@ -64,6 +64,25 @@ impl Wal {
         ))
     }
 
+    /// Append many ops with a single fsync. Durability is unchanged — the
+    /// call still returns only after the data is on disk — but one flush is
+    /// amortized across the batch instead of paid per record, which is the
+    /// difference between hundreds and thousands of ingests per second.
+    pub fn append_batch(&mut self, ops: &[WalOp]) -> Result<()> {
+        if ops.is_empty() {
+            return Ok(());
+        }
+        let mut buf = String::new();
+        for op in ops {
+            buf.push_str(&serde_json::to_string(op)?);
+            buf.push('\n');
+        }
+        self.file.write_all(buf.as_bytes())?;
+        self.file.sync_data()?;
+        self.appends += ops.len();
+        Ok(())
+    }
+
     pub fn append(&mut self, op: &WalOp) -> Result<()> {
         let mut line = serde_json::to_string(op)?;
         line.push('\n');

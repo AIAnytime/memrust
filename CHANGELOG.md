@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Bulk ingest no longer fails on real batches.** The HTTP body limit was
+  axum's 2 MB default, which rejected any batch bigger than ~400 memories at
+  384 dims (413 Payload Too Large). Raised to 256 MB.
+- **Batch ingest is ~4.5x faster** (221 -> 997 records/s measured): the WAL now
+  group-commits, so one fsync covers a whole batch instead of one per record.
+  Durability is unchanged — the call still returns only after data is on disk.
+- Cross-engine benchmarks in `benches/` comparing memrust with Qdrant, Chroma,
+  FAISS, pgvector and LanceDB, plus a comparison section in the README.
+
 ## 0.5.3 — 2026-07-27
 
 - Dashboard supports light and dark themes with a header toggle. It follows

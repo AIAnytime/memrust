@@ -284,6 +284,96 @@ memrust serve --summarizer openai --summarizer-model gpt-4o-mini \
    functional offline with the hash embedder; production deployments swap in
    a real model via the `Embedder` trait or bring precomputed vectors.
 
+## How it compares
+
+Everything below was measured on one machine (M-series MacBook, macOS) with
+the scripts in [`benches/`](benches/) — `compare.py` for speed, `agent_recall.py`
+for retrieval quality. Re-run them yourself; the numbers move with hardware.
+
+### Vector search: memrust is competitive, not fastest
+
+20,000 vectors, 384 dims, clustered like real embeddings, top-10, identical
+HNSW settings everywhere (M=16, ef_construction=200, ef_search=100). Recall is
+against exact brute-force ground truth.
+
+| Engine | Ingest/s | Query p50 | Query p95 | recall@10 |
+|---|---|---|---|---|
+| FAISS (in-process lib) | 34,937 | **0.07 ms** | 0.10 ms | 1.000 |
+| LanceDB (embedded) | **84,408** | 8.28 ms | 9.39 ms | 1.000 |
+| Chroma (in-process) | 5,984 | 0.50 ms | 0.58 ms | 1.000 |
+| pgvector (server, SQL) | 5,093 | 0.48 ms | 0.58 ms | 1.000 |
+| Qdrant (server, HTTP) | 4,751 | 1.95 ms | 2.90 ms | 1.000 |
+| **memrust (server, HTTP)** | 997 | 1.81 ms | 2.16 ms | 0.985 |
+
+Read that honestly: **on pure vector search memrust is mid-pack.** Query
+latency is on par with Qdrant, and both trail in-process libraries because a
+network round-trip costs more than the search itself. Ingest is the weak spot
+— memrust fsyncs every write for crash-safety, where the others buffer; batch
+ingest amortizes one fsync across the batch, which is what makes 997/s
+possible at all, but it is still an order of magnitude behind. Recall is 1.5
+points under exact. If raw ANN throughput is your problem, use FAISS.
+
+### Agent memory: where the architecture actually matters
+
+500 memories, the same all-MiniLM-L6-v2 embeddings given to every engine, and
+two question shapes an agent actually asks. Metric is hit@5 — was the one
+correct memory in the top 5?
+
+| Engine | `"INC-90312"` (identifier) | `"how quickly do toggles reach users?"` (paraphrase) |
+|---|---|---|
+| Exact vector search *(the ceiling)* | 27% | 90% |
+| FAISS | 27% | 70% |
+| Chroma | 27% | 90% |
+| Qdrant | 27% | 90% |
+| memrust (semantic-weighted) | 58% | 80% |
+| **memrust (hybrid, default)** | **75%** | 80% |
+
+The identifier column is the point. **Exact, brute-force vector search also
+scores 27%** — so this is not an index-quality problem that a better ANN
+implementation fixes. The embedding simply cannot separate `INC-90312` from
+`INC-90319`; they are near-identical strings with near-identical vectors. Any
+pure vector store inherits that ceiling. memrust clears it because BM25 and
+the entity graph run over the same memories and their rankings are fused.
+
+Agents hit this constantly: error codes, ticket IDs, customer names, function
+names, commit SHAs. The usual fix is to bolt a keyword index next to your
+vector DB and write fusion code. memrust ships that as the default path.
+
+(Caveat: 60 identifier probes but only 10 paraphrase probes, so treat the
+paraphrase column as directional — the spread there is a couple of probes.)
+
+### What you would otherwise assemble
+
+| | memrust | Qdrant | Chroma | FAISS | pgvector | LanceDB |
+|---|---|---|---|---|---|---|
+| Vector search | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Keyword/BM25 fused into one query | ✅ built-in | ⚙️ sparse vectors | ❌ substring filter only | ❌ | ⚙️ via `tsvector` | ✅ |
+| Entity-graph traversal as a signal | ✅ | ❌ | ❌ | ❌ | ⚙️ via SQL joins | ❌ |
+| Per-signal score explanation | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Agent API (`remember`/`recall`/`forget`, memory kinds) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Memory lifecycle (TTL + consolidation) | ✅ | ❌ | ❌ | ❌ | ⚙️ cron + SQL | ❌ |
+| Multi-agent private/shared visibility | ✅ | ⚙️ payload filters | ⚙️ metadata filters | ❌ | ⚙️ row policies | ⚙️ filters |
+| MCP server for agent runtimes | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Built-in web dashboard | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Embeddable (no server) | ✅ Rust lib | ❌ | ✅ | ✅ | ❌ | ✅ |
+
+✅ built in · ⚙️ possible, you build it · ❌ not available
+
+### So why use memrust?
+
+Because the alternative to one memory engine is a stack: a vector DB, a
+keyword index, fusion code, a graph store for relationships, a scheduler for
+expiry and summarization, application-level access control, and an MCP shim.
+memrust is one binary that does those as its default behavior, and it answers
+the question agents actually ask — *"what do I know about this?"* — rather
+than *"which vectors are nearest?"*
+
+**Do not use memrust if** you need maximum ANN throughput on a large static
+corpus (FAISS), you are already deep in Postgres and only need embeddings
+(pgvector), or you need billion-scale distributed sharding today (Qdrant,
+Milvus). memrust is young — v0.5, single-node, one writer — and it is honest
+about that.
+
 ## Project layout
 
 ```

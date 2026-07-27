@@ -15,7 +15,7 @@
 
 use std::sync::{Arc, RwLock};
 
-use axum::extract::{Query, State};
+use axum::extract::{DefaultBodyLimit, Query, State};
 use axum::http::StatusCode;
 use axum::response::Html;
 use axum::routing::{get, post};
@@ -35,6 +35,12 @@ fn without_embedding(mut record: MemoryRecord) -> MemoryRecord {
 
 type Shared = Arc<RwLock<MemoryEngine>>;
 
+/// Bulk ingest sends raw embeddings, so request bodies are large by nature:
+/// 10k memories at 1024 dims is ~125 MB of JSON. Axum defaults to 2 MB,
+/// which rejects any real batch, so raise it well past that while keeping a
+/// bound (an unbounded body is a denial-of-service invitation).
+pub const MAX_BODY_BYTES: usize = 256 * 1024 * 1024;
+
 pub fn router(engine: Shared) -> Router {
     Router::new()
         .route("/", get(dashboard))
@@ -50,6 +56,7 @@ pub fn router(engine: Shared) -> Router {
         .route("/v1/lifecycle/run", post(lifecycle_run))
         .route("/v1/snapshot", post(snapshot))
         .route("/v1/restore", post(restore))
+        .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(engine)
 }
 
