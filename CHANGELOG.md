@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Dashboard supports light and dark themes with a header toggle. It follows
+  the system preference by default and remembers an explicit choice
+  (localStorage), applied before first paint so there is no flash. Each
+  theme's signal colors are selected against their own surface rather than
+  auto-inverted, and both palettes pass the categorical color checks.
+
 ## 0.5.2 — 2026-07-27
 
 - **SQ8 quantization is now the default for vectors >= 1024 dims.** At that

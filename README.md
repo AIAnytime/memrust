@@ -170,7 +170,9 @@ entity graph (click an entity to run a relational search), and trigger
 lifecycle/checkpoint. Query URLs are shareable: `/?q=Project%20Phoenix&strategy=relational`.
 
 <p align="center">
-  <img src="assets/dashboard.png" alt="memrust dashboard — hybrid recall with per-signal scores" width="760">
+  <img src="assets/dashboard.png" alt="memrust dashboard in dark theme — hybrid recall with per-signal scores" width="760">
+  <br><br>
+  <img src="assets/dashboard-light.png" alt="memrust dashboard in light theme" width="760">
 </p>
 
 ### Use it as memory for Claude Code
