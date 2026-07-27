@@ -79,6 +79,9 @@ export interface RecallOptions {
   until?: number;
   rerank?: boolean;
   queryEmbedding?: number[];
+  /** Widen the HNSW beam for this query — more accurate, slower. Defaults to
+   * the index setting (100). */
+  efSearch?: number;
 }
 
 export interface EngineStats {
@@ -204,6 +207,7 @@ export class MemrustClient {
         as_agent: opts.asAgent ?? this.agentId,
         rerank: opts.rerank,
         query_embedding: opts.queryEmbedding,
+        ef_search: opts.efSearch,
         filter: Object.keys(filter).length > 0 ? filter : undefined,
       }),
     );

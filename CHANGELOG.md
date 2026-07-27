@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.4 — 2026-07-28
 
 - **Writes no longer block readers for the duration of an fsync.** The write
   path is split: `stage` builds the record and gets it on disk while holding
@@ -24,6 +24,7 @@
   without a server restart.
 - `benches/concurrency.py` measures read scaling and write interference, and
   `memrust bench --engine` measures end-to-end recall latency without HTTP.
+- Both SDKs expose `ef_search` / `efSearch` on recall.
 
 - **Bulk ingest no longer fails on real batches.** The HTTP body limit was
   axum's 2 MB default, which rejected any batch bigger than ~400 memories at

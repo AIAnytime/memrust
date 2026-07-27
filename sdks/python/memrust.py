@@ -22,7 +22,7 @@ import urllib.request
 from typing import Any, Optional
 
 __all__ = ["MemrustClient", "MemrustError"]
-__version__ = "0.5.3"
+__version__ = "0.5.4"
 
 
 class MemrustError(RuntimeError):
@@ -126,12 +126,15 @@ class MemrustClient:
         until: Optional[int] = None,
         rerank: Optional[bool] = None,
         query_embedding: Optional[list[float]] = None,
+        ef_search: Optional[int] = None,
     ) -> list[dict]:
         """Hybrid recall (vector + BM25 + entity graph + recency).
 
         Returns hits as {"record": ..., "score": ..., "signals": {...}} with
         the per-signal score breakdown.
         strategy: balanced | semantic | lexical | recent | relational
+        ef_search: widen the HNSW beam for this query — more accurate,
+            slower. Unset uses the index default (100).
         """
         body = _clean(
             {
@@ -141,6 +144,7 @@ class MemrustClient:
                 "as_agent": as_agent or self.agent_id,
                 "rerank": rerank,
                 "query_embedding": query_embedding,
+                "ef_search": ef_search,
                 "filter": _clean(
                     {
                         "kinds": kinds,
