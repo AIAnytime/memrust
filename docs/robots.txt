@@ -1,0 +1,13 @@
+# memrust — https://aianytime.github.io/memrust/
+#
+# Everything here is public documentation and marketing. Nothing is gated,
+# nothing is user data, so everything is crawlable.
+
+User-agent: *
+Allow: /
+
+# Agent-readable summary of the project, for anything that looks for it.
+# See https://llmstxt.org
+# /memrust/llms.txt
+
+Sitemap: https://aianytime.github.io/memrust/sitemap.xml

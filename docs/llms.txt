@@ -1,0 +1,114 @@
+# memrust
+
+> Memory infrastructure for AI agents. An agent-native memory engine written in
+> Rust that answers "what do I know about this?" rather than "which vectors are
+> nearest?" — exposed through remember / recall / forget, retrievable over four
+> fused signals, and reachable by any MCP client so every agent shares one
+> memory. Apache-2.0, single binary, no external search dependencies.
+
+## What it is
+
+memrust is not a vector database. A vector database stores an embedding with a
+metadata blob attached; memrust stores a *memory* — typed as episodic,
+semantic, working, reflection, tool_call or procedural; owned by an agent; able
+to expire; linked to extracted entities; carrying provenance when distilled
+from older memories.
+
+Every recall runs four retrieval signals over the same memories and fuses their
+rankings with reciprocal-rank fusion:
+
+- **vector** — in-crate HNSW (M=16, ef 100/200) over your embeddings; meaning
+  and paraphrase
+- **lexical** — in-crate BM25 (k1=1.2, b=0.75); exact identifiers, error codes,
+  ticket numbers, names
+- **graph** — entities extracted at ingest, linked by co-occurrence, traversed
+  one hop; finds what is *related*, not merely similar
+- **recency** — exponential decay, one-week half-life; "what did we decide
+  lately" is not a similarity question
+
+Every hit returns its per-signal breakdown, so an agent can tell a strong
+semantic match from a lucky keyword hit.
+
+## The finding that motivates it
+
+Given 500 memories and identical all-MiniLM-L6-v2 embeddings, asking for an
+exact identifier (`INC-90312`) and measuring hit@5:
+
+- Exact brute-force vector search: **27%**
+- FAISS, Chroma, Qdrant: **27%**
+- memrust (hybrid, default): **75%**
+
+Exact brute-force search scores the same 27% as the approximate indexes, so
+this is not an index-quality problem that a faster ANN fixes. It is the ceiling
+of the embedding itself — `INC-90312` and `INC-90319` are near-identical
+strings and therefore near-identical vectors — and every pure vector store
+inherits it. Reproduce with `benches/agent_recall.py`.
+
+## Install
+
+- [crates.io](https://crates.io/crates/memrust): `cargo install memrust`
+- [Docker Hub](https://hub.docker.com/r/aianytime/memrust): `docker run -p 7700:7700 -v memrust-data:/data aianytime/memrust`
+- [PyPI](https://pypi.org/project/memrust/): `pip install memrust` (client SDK)
+- [npm](https://www.npmjs.com/package/memrust-client): `npm install memrust-client` (client SDK)
+
+## HTTP API
+
+Base path `/v1`. Select a namespace with the `X-Memrust-Namespace` header;
+authenticate with `Authorization: Bearer <key>` or `X-API-Key` when keys are
+configured.
+
+- `POST /v1/remember` — `{text, kind?, tags?, importance?, session_id?, agent_id?, visibility?, embedding?}` → the stored record
+- `POST /v1/remember_batch` — `{items: [...]}`; one embedding round-trip and one fsync for the batch
+- `POST /v1/recall` — `{query, top_k?, strategy?, filter?, as_agent?, ef_search?, query_embedding?}` → `{hits: [{score, record, signals}]}`
+- `POST /v1/forget` — `{id}` → `{forgotten}`; durable immediately
+- `GET /v1/memories?offset&limit` — newest first
+- `GET /v1/entities?limit` — extracted entities by frequency
+- `POST /v1/lifecycle/run` — TTL sweep and consolidation on demand
+- `POST /v1/snapshot` / `POST /v1/restore` — move a session's memory between machines
+- `GET /health`, `GET /healthz`, `GET /metrics` (Prometheus)
+
+Recall strategies: `balanced` (default), `semantic`, `lexical`, `recent`,
+`relational`. They reweight the fusion; they never switch an index off, so an
+exact-id query still works under `semantic` and vice versa.
+
+## MCP
+
+memrust speaks the Model Context Protocol two ways:
+
+- **stdio**, for local agents: `claude mcp add memory -- memrust mcp --data-dir ~/.memrust`
+- **HTTP**, hosted: `claude mcp add --transport http memrust https://<host>/mcp --header "Authorization: Bearer <key>"`
+
+Tools: `memory_remember`, `memory_recall`, `memory_forget`, `memory_entities`.
+Any MCP client connects — Claude Code, Claude Desktop, claude.ai connectors,
+Cursor, Windsurf, Codex. Pointing several at one project is how agents come to
+share memory rather than each keeping a private copy.
+
+## Multi-agent visibility
+
+Memories owned by an `agent_id` are private by default; set
+`"visibility": "shared"` to publish to the team. Recall with `as_agent` sees
+shared memories, unowned memories, and that agent's own private ones. The rule
+is enforced in the pre-filter *inside* every index search, not as a filter over
+results, so it cannot leak through ranking either.
+
+## Links
+
+- [Landing page](https://aianytime.github.io/memrust/)
+- [Source, Apache-2.0](https://github.com/AIAnytime/memrust)
+- [README with full API and benchmarks](https://github.com/AIAnytime/memrust/blob/main/README.md)
+- [Benchmarks you can re-run](https://github.com/AIAnytime/memrust/tree/main/benches)
+- [Colab notebooks](https://github.com/AIAnytime/memrust/tree/main/notebooks)
+- [Book a demo](https://calendar.app.google/7mXS2JweP2pmmGbYA)
+
+## Optional
+
+- Embeddings are pluggable: OpenAI, Gemini, any OpenAI-compatible server
+  (Ollama, HF TEI, LM Studio, vLLM), bring-your-own vectors, or an offline
+  feature-hashing default that needs no keys at all.
+- SQ8 scalar quantization engages automatically at ≥1024 dimensions, where it
+  is both faster than f32 and a quarter of the memory.
+- Durability is a write-ahead log with fsync on append; recovery is checkpoint
+  plus WAL tail. Tested with four concurrent writers racing a checkpoint loop
+  and `kill -9`: 1,000 acknowledged writes, 1,000 recovered.
+- Hosted memory (projects, scoped API keys, metering, audit, MCP over HTTP) is
+  in private beta.
