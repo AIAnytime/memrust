@@ -10,13 +10,19 @@
 //! POST /v1/restore        { records }      -> { restored: usize }
 //! GET  /v1/memories?offset&limit           -> { total, records } (newest first)
 //! GET  /v1/entities?limit                  -> { entities: [{name, count}] }
+//! GET  /v1/namespaces                      -> { namespaces } (admin key)
+//! POST /v1/namespaces/drop { namespace }   -> { dropped } (admin key)
 //! GET  /health                             -> EngineStats
 //! GET  /                                   -> embedded web dashboard
+//!
+//! Every request selects a namespace with the `X-Memrust-Namespace` header
+//! (default: `default`) and, when keys are configured, presents one with
+//! `Authorization: Bearer <key>` or `X-API-Key`.
 
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
 
 use axum::extract::{DefaultBodyLimit, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::Html;
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -24,7 +30,7 @@ use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::engine::MemoryEngine;
+use crate::server::tenancy::{extract_key, extract_namespace, ApiKey, Auth, Namespace, Registry};
 use crate::types::{MemoryRecord, RecallRequest, RememberRequest};
 
 /// API responses omit raw embeddings; they're an internal representation.
@@ -33,25 +39,68 @@ fn without_embedding(mut record: MemoryRecord) -> MemoryRecord {
     record
 }
 
-type Shared = Arc<RwLock<MemoryEngine>>;
-
 /// Writes run in two phases — persist under a *read* lock (so readers are not
-/// blocked for the fsync), then apply under the write lock. This mutex
-/// serializes writers across both phases. Without it a checkpoint could land
-/// between them, saving state that lacks the record and truncating the WAL
-/// entry that describes it, which would lose an acknowledged write.
+/// blocked for the fsync), then apply under the write lock. The per-namespace
+/// commit mutex serializes writers across both phases. Without it a checkpoint
+/// could land between them, saving state that lacks the record and truncating
+/// the WAL entry that describes it, which would lose an acknowledged write.
 #[derive(Clone)]
-struct AppState {
-    engine: Shared,
-    commit: Arc<Mutex<()>>,
+pub struct AppState {
+    registry: Arc<Registry>,
+    auth: Auth,
 }
 
+type Rejection = (StatusCode, String);
+
 impl AppState {
-    fn new(engine: Shared) -> Self {
-        Self {
-            engine,
-            commit: Arc::new(Mutex::new(())),
+    /// Authenticate, then resolve the namespace the caller asked for. Both
+    /// failures are refusals, so they answer the same way a caller can act
+    /// on: what was wrong and what to send instead.
+    fn resolve(&self, headers: &HeaderMap) -> Result<(Namespace, String), Rejection> {
+        let namespace = extract_namespace(headers);
+        if self.auth.enabled() {
+            let presented = extract_key(headers).ok_or((
+                StatusCode::UNAUTHORIZED,
+                "missing API key — send 'Authorization: Bearer <key>' or 'X-API-Key: <key>'"
+                    .to_string(),
+            ))?;
+            let key = self
+                .auth
+                .authenticate(&presented)
+                .ok_or((StatusCode::UNAUTHORIZED, "invalid API key".to_string()))?;
+            if !key.may_access(&namespace) {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    format!("this key is not scoped to namespace '{namespace}'"),
+                ));
+            }
         }
+        let ns = self
+            .registry
+            .get_or_create(&namespace)
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        Ok((ns, namespace))
+    }
+
+    /// Administrative routes need a key with unrestricted scope. With auth
+    /// off, the server is already open and there is nothing to gate.
+    fn require_admin(&self, headers: &HeaderMap) -> Result<(), Rejection> {
+        if !self.auth.enabled() {
+            return Ok(());
+        }
+        let presented = extract_key(headers)
+            .ok_or((StatusCode::UNAUTHORIZED, "missing API key".to_string()))?;
+        let key: &ApiKey = self
+            .auth
+            .authenticate(&presented)
+            .ok_or((StatusCode::UNAUTHORIZED, "invalid API key".to_string()))?;
+        if !key.is_admin() {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "this operation needs a key with access to all namespaces".to_string(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -61,7 +110,7 @@ impl AppState {
 /// bound (an unbounded body is a denial-of-service invitation).
 pub const MAX_BODY_BYTES: usize = 256 * 1024 * 1024;
 
-pub fn router(engine: Shared) -> Router {
+pub fn router(registry: Arc<Registry>, auth: Auth) -> Router {
     Router::new()
         .route("/", get(dashboard))
         .route("/dashboard", get(dashboard))
@@ -76,14 +125,28 @@ pub fn router(engine: Shared) -> Router {
         .route("/v1/lifecycle/run", post(lifecycle_run))
         .route("/v1/snapshot", post(snapshot))
         .route("/v1/restore", post(restore))
+        .route("/v1/namespaces", get(list_namespaces))
+        .route("/v1/namespaces/drop", post(drop_namespace))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
-        .with_state(AppState::new(engine))
+        .with_state(AppState { registry, auth })
 }
 
-pub async fn serve(engine: Shared, addr: &str) -> anyhow::Result<()> {
+pub async fn serve(registry: Arc<Registry>, auth: Auth, addr: &str) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     println!("memrust listening on http://{addr}");
-    axum::serve(listener, router(engine)).await?;
+    if auth.enabled() {
+        println!("authentication: enabled");
+    } else {
+        println!("authentication: DISABLED — anyone who can reach this port can read and write every memory");
+        let public = !addr.starts_with("127.") && !addr.starts_with("localhost");
+        if public {
+            eprintln!(
+                "warning: {addr} is not loopback and no --api-key was given; \
+                 anyone who can reach it has full access"
+            );
+        }
+    }
+    axum::serve(listener, router(registry, auth)).await?;
     Ok(())
 }
 
@@ -106,15 +169,17 @@ fn default_page() -> usize {
 
 async fn list_memories(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(q): Query<ListQuery>,
-) -> Json<serde_json::Value> {
-    let (total, records) = state
+) -> Result<Json<serde_json::Value>, Rejection> {
+    let (ns, _) = state.resolve(&headers)?;
+    let (total, records) = ns
         .engine
         .read()
         .unwrap()
         .list_memories(q.offset, q.limit.min(200));
     let records: Vec<_> = records.into_iter().map(without_embedding).collect();
-    Json(json!({ "total": total, "records": records }))
+    Ok(Json(json!({ "total": total, "records": records })))
 }
 
 #[derive(Deserialize)]
@@ -129,9 +194,11 @@ fn default_entities() -> usize {
 
 async fn entities(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(q): Query<EntitiesQuery>,
-) -> Json<serde_json::Value> {
-    let entities: Vec<serde_json::Value> = state
+) -> Result<Json<serde_json::Value>, Rejection> {
+    let (ns, _) = state.resolve(&headers)?;
+    let entities: Vec<serde_json::Value> = ns
         .engine
         .read()
         .unwrap()
@@ -139,12 +206,18 @@ async fn entities(
         .into_iter()
         .map(|(name, count)| json!({ "name": name, "count": count }))
         .collect();
-    Json(json!({ "entities": entities }))
+    Ok(Json(json!({ "entities": entities })))
 }
 
-async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let stats = state.engine.read().unwrap().stats();
-    Json(json!({ "status": "ok", "stats": stats }))
+async fn health(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, Rejection> {
+    let (ns, name) = state.resolve(&headers)?;
+    let stats = ns.engine.read().unwrap().stats();
+    Ok(Json(
+        json!({ "status": "ok", "namespace": name, "stats": stats }),
+    ))
 }
 
 // remember/recall may call a remote embedding API (blocking I/O), so they
@@ -152,16 +225,17 @@ async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
 
 async fn remember(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<RememberRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let (ns, _) = state.resolve(&headers)?;
     let record = tokio::task::spawn_blocking(move || -> anyhow::Result<MemoryRecord> {
-        let _commit = state.commit.lock().expect("commit lock");
+        let _commit = ns.commit.lock().expect("commit lock");
         // Persist under a read lock: concurrent recalls keep running while
         // this write waits on the disk.
-        let record = state.engine.read().unwrap().stage(req)?;
+        let record = ns.engine.read().unwrap().stage(req)?;
         // Make it visible: in-memory only, so the exclusive lock is brief.
-        state
-            .engine
+        ns.engine
             .write()
             .unwrap()
             .apply_staged(std::iter::once(record.clone()));
@@ -175,9 +249,11 @@ async fn remember(
 
 async fn recall(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<RecallRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let mut hits = tokio::task::spawn_blocking(move || state.engine.read().unwrap().recall(&req))
+    let (ns, _) = state.resolve(&headers)?;
+    let mut hits = tokio::task::spawn_blocking(move || ns.engine.read().unwrap().recall(&req))
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     for hit in &mut hits {
@@ -193,12 +269,14 @@ struct RememberBatchBody {
 
 async fn remember_batch(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<RememberBatchBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let (ns, _) = state.resolve(&headers)?;
     let records = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<MemoryRecord>> {
-        let _commit = state.commit.lock().expect("commit lock");
-        let records = state.engine.read().unwrap().stage_batch(body.items)?;
-        state.engine.write().unwrap().apply_staged(records.clone());
+        let _commit = ns.commit.lock().expect("commit lock");
+        let records = ns.engine.read().unwrap().stage_batch(body.items)?;
+        ns.engine.write().unwrap().apply_staged(records.clone());
         Ok(records)
     })
     .await
@@ -210,10 +288,12 @@ async fn remember_batch(
 
 async fn checkpoint(
     State(state): State<AppState>,
+    headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let (ns, _) = state.resolve(&headers)?;
     tokio::task::spawn_blocking(move || {
-        let _commit = state.commit.lock().expect("commit lock");
-        state.engine.write().unwrap().checkpoint()
+        let _commit = ns.commit.lock().expect("commit lock");
+        ns.engine.write().unwrap().checkpoint()
     })
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -221,14 +301,42 @@ async fn checkpoint(
     Ok(Json(json!({ "checkpointed": true })))
 }
 
+async fn list_namespaces(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, Rejection> {
+    state.require_admin(&headers)?;
+    Ok(Json(json!({ "namespaces": state.registry.list() })))
+}
+
+#[derive(Deserialize)]
+struct DropBody {
+    namespace: String,
+}
+
+async fn drop_namespace(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DropBody>,
+) -> Result<Json<serde_json::Value>, Rejection> {
+    state.require_admin(&headers)?;
+    let dropped = state
+        .registry
+        .drop_namespace(&body.namespace)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(json!({ "dropped": dropped })))
+}
+
 // Lifecycle runs the summarizer and embedder (possibly remote), so it goes
 // on the blocking pool like remember/recall.
 async fn lifecycle_run(
     State(state): State<AppState>,
+    headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let (ns, _) = state.resolve(&headers)?;
     let report = tokio::task::spawn_blocking(move || {
-        let _commit = state.commit.lock().expect("commit lock");
-        state.engine.write().unwrap().run_lifecycle()
+        let _commit = ns.commit.lock().expect("commit lock");
+        ns.engine.write().unwrap().run_lifecycle()
     })
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -244,14 +352,16 @@ struct SnapshotBody {
 
 async fn snapshot(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<SnapshotBody>,
-) -> Json<serde_json::Value> {
-    let snapshot = state
+) -> Result<Json<serde_json::Value>, Rejection> {
+    let (ns, _) = state.resolve(&headers)?;
+    let snapshot = ns
         .engine
         .read()
         .unwrap()
         .snapshot(body.session_id.as_deref());
-    Json(json!({ "snapshot": snapshot }))
+    Ok(Json(json!({ "snapshot": snapshot })))
 }
 
 #[derive(Deserialize)]
@@ -261,11 +371,13 @@ struct RestoreBody {
 
 async fn restore(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<RestoreBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let (ns, _) = state.resolve(&headers)?;
     let restored = tokio::task::spawn_blocking(move || {
-        let _commit = state.commit.lock().expect("commit lock");
-        state.engine.write().unwrap().restore(body.records)
+        let _commit = ns.commit.lock().expect("commit lock");
+        ns.engine.write().unwrap().restore(body.records)
     })
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -280,12 +392,13 @@ struct ForgetBody {
 
 async fn forget(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<ForgetBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let (ns, _) = state.resolve(&headers)?;
     let forgotten = {
-        let _commit = state.commit.lock().expect("commit lock");
-        state
-            .engine
+        let _commit = ns.commit.lock().expect("commit lock");
+        ns.engine
             .write()
             .unwrap()
             .forget(body.id)

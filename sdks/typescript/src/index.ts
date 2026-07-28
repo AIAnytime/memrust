@@ -114,19 +114,34 @@ function clean(obj: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
 }
 
+export interface ClientOptions {
+  agentId?: string;
+  /** Authenticates when the server was started with --api-key. */
+  apiKey?: string;
+  /** Selects an isolated store with its own indexes and data directory. */
+  namespace?: string;
+}
+
 export class MemrustClient {
   readonly baseUrl: string;
   readonly agentId?: string;
+  readonly apiKey?: string;
+  readonly namespace?: string;
 
-  constructor(baseUrl = "http://127.0.0.1:7700", opts: { agentId?: string } = {}) {
+  constructor(baseUrl = "http://127.0.0.1:7700", opts: ClientOptions = {}) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.agentId = opts.agentId;
+    this.apiKey = opts.apiKey;
+    this.namespace = opts.namespace;
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
+    if (this.namespace) headers["X-Memrust-Namespace"] = this.namespace;
     const resp = await fetch(`${this.baseUrl}${path}`, {
       method,
-      headers: { "content-type": "application/json" },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!resp.ok) {
@@ -245,5 +260,19 @@ export class MemrustClient {
   /** Persist index state and truncate the WAL. */
   async checkpoint(): Promise<void> {
     await this.request("POST", "/v1/checkpoint");
+  }
+
+  /** Every namespace on the server. Needs a key with full access. */
+  async namespaces(): Promise<string[]> {
+    const r = await this.request<{ namespaces: string[] }>("GET", "/v1/namespaces");
+    return r.namespaces;
+  }
+
+  /** Delete a namespace and everything in it. Irreversible. */
+  async dropNamespace(namespace: string): Promise<boolean> {
+    const r = await this.request<{ dropped: boolean }>("POST", "/v1/namespaces/drop", {
+      namespace,
+    });
+    return r.dropped;
   }
 }

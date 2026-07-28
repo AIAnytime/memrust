@@ -12,6 +12,9 @@ Talks to a running `memrust serve` over HTTP using only the standard library.
 Passing `agent_id` scopes the client: remembers are stamped with that
 identity (private by default) and recalls run as that agent — it sees shared
 memories, unowned memories, and its own private ones.
+
+`namespace` selects an isolated store (its own indexes and data directory);
+`api_key` authenticates when the server was started with --api-key.
 """
 
 from __future__ import annotations
@@ -39,20 +42,29 @@ class MemrustClient:
         base_url: str = "http://127.0.0.1:7700",
         *,
         agent_id: Optional[str] = None,
+        api_key: Optional[str] = None,
+        namespace: Optional[str] = None,
         timeout: float = 30.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.agent_id = agent_id
+        self.api_key = api_key
+        self.namespace = namespace
         self.timeout = timeout
 
     # -- transport ---------------------------------------------------------
 
     def _request(self, method: str, path: str, body: Optional[dict] = None) -> dict:
+        headers = {"content-type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        if self.namespace:
+            headers["X-Memrust-Namespace"] = self.namespace
         req = urllib.request.Request(
             f"{self.base_url}{path}",
             method=method,
             data=None if body is None else json.dumps(body).encode(),
-            headers={"content-type": "application/json"},
+            headers=headers,
         )
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
@@ -180,3 +192,13 @@ class MemrustClient:
     def checkpoint(self) -> None:
         """Persist index state and truncate the WAL."""
         self._request("POST", "/v1/checkpoint")
+
+    # -- namespaces --------------------------------------------------------
+
+    def namespaces(self) -> list[str]:
+        """Every namespace on the server. Needs a key with full access."""
+        return self._request("GET", "/v1/namespaces")["namespaces"]
+
+    def drop_namespace(self, namespace: str) -> bool:
+        """Delete a namespace and everything in it. Irreversible."""
+        return self._request("POST", "/v1/namespaces/drop", {"namespace": namespace})["dropped"]

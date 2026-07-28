@@ -1,11 +1,12 @@
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use memrust::embed::{Embedder, HashEmbedder, RemoteEmbedder};
 use memrust::engine::MemoryEngine;
 use memrust::index::vector::{HnswConfig, Quantization, AUTO_QUANTIZE_DIM};
 use memrust::rerank::LlmReranker;
+use memrust::server::tenancy::{ApiKey, Auth, EngineFactory, MakeReranker, Registry};
 use memrust::summarize::{ExtractiveSummarizer, RemoteSummarizer, Summarizer};
 use memrust::types::{LifecycleConfig, MemoryKind, RecallRequest, RecallStrategy, RememberRequest};
 
@@ -27,6 +28,17 @@ SCALE OPTIONS:
 MULTI-AGENT (mcp):
     --agent-id <name>   stamp remembers with this identity (private by default)
                         and scope recalls to what this agent may see
+
+NAMESPACES & AUTH (serve):
+    --api-key <KEY>            require this key; repeat for several keys
+    --api-key <KEY>:ns1,ns2    scope a key to specific namespaces
+    --namespace <name>         namespace for `mcp` (default: default)
+
+    Requests pick a namespace with the X-Memrust-Namespace header and present
+    a key as `Authorization: Bearer <key>` or `X-API-Key`. Each namespace is a
+    separate engine with its own indexes and data directory. With no --api-key
+    the server is unauthenticated, which is fine on loopback and not fine on a
+    public address — it warns when you do that.
 
 EMBEDDING OPTIONS:
     --embedder hash|openai|gemini   default: hash (offline, no API needed)
@@ -86,10 +98,7 @@ fn build_lifecycle_config(args: &[String]) -> Result<LifecycleConfig> {
     })
 }
 
-type Shared = Arc<RwLock<MemoryEngine>>;
-
-fn open_engine(args: &[String]) -> Result<Shared> {
-    let dir = PathBuf::from(flag(args, "--data-dir", "./memrust-data"));
+fn index_config(args: &[String]) -> Result<HnswConfig> {
     let quantize = match (
         args.iter().any(|a| a == "--quantize"),
         args.iter().any(|a| a == "--no-quantize"),
@@ -100,30 +109,62 @@ fn open_engine(args: &[String]) -> Result<Shared> {
         // Auto: decided by the first vector's width (>= AUTO_QUANTIZE_DIM).
         (false, false) => Quantization::Auto,
     };
-    let index_cfg = HnswConfig {
+    Ok(HnswConfig {
         quantize,
         ..HnswConfig::default()
-    };
-    let mut engine = MemoryEngine::open_with_options(
-        &dir,
-        build_embedder(args)?,
-        build_summarizer(args)?,
-        build_lifecycle_config(args)?,
-        index_cfg,
-    )?;
+    })
+}
+
+fn reranker_factory(args: &[String]) -> Result<Option<MakeReranker>> {
     match flag(args, "--reranker", "none").as_str() {
-        "none" => {}
+        "none" => Ok(None),
         "openai" => {
             let url = flag(args, "--reranker-url", "https://api.openai.com/v1");
             let model = flag(args, "--reranker-model", "gpt-4o-mini");
             let key = std::env::var("MEMRUST_RERANK_API_KEY")
                 .or_else(|_| std::env::var("OPENAI_API_KEY"))
                 .unwrap_or_default();
-            engine.set_reranker(Box::new(LlmReranker::openai_compatible(&url, &model, &key)));
+            Ok(Some(Box::new(move || {
+                Box::new(LlmReranker::openai_compatible(&url, &model, &key))
+            })))
         }
         other => bail!("unknown reranker '{other}' (expected openai)"),
     }
-    Ok(Arc::new(RwLock::new(engine)))
+}
+
+/// A registry can spin up an engine per namespace, so it needs recipes rather
+/// than instances — embedders and summarizers are trait objects and each
+/// namespace gets its own.
+fn build_registry(args: &[String]) -> Result<Arc<Registry>> {
+    let dir = PathBuf::from(flag(args, "--data-dir", "./memrust-data"));
+    let owned: Vec<String> = args.to_vec();
+    let owned2 = owned.clone();
+    let factory = EngineFactory {
+        embedder: Box::new(move || build_embedder(&owned)),
+        summarizer: Box::new(move || build_summarizer(&owned2)),
+        reranker: reranker_factory(args)?,
+        lifecycle: build_lifecycle_config(args)?,
+        index: index_config(args)?,
+    };
+    let registry = Arc::new(Registry::new(dir, factory));
+    let opened = registry.open_existing()?;
+    if opened > 0 {
+        println!("opened {opened} namespace(s) from disk");
+    }
+    Ok(registry)
+}
+
+fn build_auth(args: &[String]) -> Result<Auth> {
+    let mut keys = Vec::new();
+    for (i, a) in args.iter().enumerate() {
+        if a == "--api-key" {
+            let spec = args
+                .get(i + 1)
+                .ok_or_else(|| anyhow::anyhow!("--api-key needs a value"))?;
+            keys.push(ApiKey::parse(spec)?);
+        }
+    }
+    Ok(Auth::new(keys))
 }
 
 /// Index microbenchmark: insert rate, search throughput and recall@10 for
@@ -328,9 +369,9 @@ fn bench(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Periodic background lifecycle: sweep expired working memory, consolidate
-/// old episodic memory into semantic summaries.
-fn spawn_lifecycle(engine: Shared, interval_secs: u64) {
+/// Periodic background lifecycle across every open namespace: sweep expired
+/// working memory, consolidate old episodic memory into semantic summaries.
+fn spawn_lifecycle(registry: Arc<Registry>, interval_secs: u64) {
     if interval_secs == 0 {
         return;
     }
@@ -339,21 +380,26 @@ fn spawn_lifecycle(engine: Shared, interval_secs: u64) {
         tick.tick().await; // skip the immediate first tick
         loop {
             tick.tick().await;
-            let engine = engine.clone();
-            match tokio::task::spawn_blocking(move || engine.write().unwrap().run_lifecycle()).await
-            {
-                Ok(Ok(report)) => {
-                    if report.expired_swept > 0 || report.batches_consolidated > 0 {
-                        eprintln!(
-                            "memrust lifecycle: swept {} expired, consolidated {} batch(es) into {} summaries",
-                            report.expired_swept,
-                            report.batches_consolidated,
-                            report.summaries.len()
-                        );
+            for (name, ns) in registry.open_namespaces() {
+                let result = tokio::task::spawn_blocking(move || {
+                    let _commit = ns.commit.lock().expect("commit lock");
+                    ns.engine.write().unwrap().run_lifecycle()
+                })
+                .await;
+                match result {
+                    Ok(Ok(report)) => {
+                        if report.expired_swept > 0 || report.batches_consolidated > 0 {
+                            eprintln!(
+                                "memrust lifecycle [{name}]: swept {} expired, consolidated {} batch(es) into {} summaries",
+                                report.expired_swept,
+                                report.batches_consolidated,
+                                report.summaries.len()
+                            );
+                        }
                     }
+                    Ok(Err(e)) => eprintln!("memrust lifecycle error [{name}]: {e}"),
+                    Err(e) => eprintln!("memrust lifecycle task panicked [{name}]: {e}"),
                 }
-                Ok(Err(e)) => eprintln!("memrust lifecycle error: {e}"),
-                Err(e) => eprintln!("memrust lifecycle task panicked: {e}"),
             }
         }
     });
@@ -403,17 +449,20 @@ async fn main() -> Result<()> {
     match args.first().map(String::as_str) {
         Some("serve") => {
             let addr = flag(&args, "--addr", "127.0.0.1:7700");
-            let engine = open_engine(&args)?;
+            let registry = build_registry(&args)?;
+            let auth = build_auth(&args)?;
             spawn_lifecycle(
-                engine.clone(),
+                registry.clone(),
                 numeric_flag(&args, "--lifecycle-interval-secs", 300)?,
             );
-            memrust::server::http::serve(engine, &addr).await
+            memrust::server::http::serve(registry, auth, &addr).await
         }
         Some("mcp") => {
-            let engine = open_engine(&args)?;
+            let registry = build_registry(&args)?;
+            let namespace = flag(&args, "--namespace", "default");
+            let engine = registry.get_or_create(&namespace)?.engine;
             spawn_lifecycle(
-                engine.clone(),
+                registry.clone(),
                 numeric_flag(&args, "--lifecycle-interval-secs", 300)?,
             );
             let agent_id = match flag(&args, "--agent-id", "") {

@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- **Namespaces.** `X-Memrust-Namespace` selects an isolated store. Each
+  namespace is a separate engine with its own indexes, WAL, checkpoint,
+  embedding dimension and directory — not a filter over a shared index — so
+  tenants can't slow each other down and dropping one is a directory delete.
+  Data directories written before namespaces existed are adopted as `default`
+  in place, so upgrading loses nothing.
+- **API keys.** `--api-key KEY` requires authentication;
+  `--api-key KEY:ns1,ns2` scopes a key to specific namespaces. Keys arrive as
+  `Authorization: Bearer` or `X-API-Key`, comparison is constant-time, and
+  admin routes need an unscoped key. With no keys configured the server stays
+  open — and warns when that happens on a non-loopback address.
+- `GET /v1/namespaces` and `POST /v1/namespaces/drop` for administration; both
+  SDKs take `api_key` / `namespace`.
+- The background lifecycle pass now sweeps every open namespace.
+
 ## 0.5.4 — 2026-07-28
 
 - **Writes no longer block readers for the duration of an fsync.** The write

@@ -104,6 +104,41 @@ dims** and keeps f32 below that. Override with `--quantize` / `--no-quantize`.
 The mode is settled by the first vector stored (that is when the width is
 known) and is fixed for the life of the collection.
 
+### Namespaces and API keys
+
+Every request selects a namespace with the `X-Memrust-Namespace` header
+(default: `default`). **A namespace is a separate engine** — its own indexes,
+WAL, checkpoint, embedding dimension and directory — so one tenant's ingest
+can't slow another's recall, and dropping a namespace deletes a directory
+rather than scanning a shared index.
+
+```bash
+# unauthenticated: fine on loopback, and the server says so at startup
+memrust serve
+
+# require keys; a key can be scoped to specific namespaces
+memrust serve \
+  --api-key "$ADMIN_KEY" \
+  --api-key "$TENANT_KEY:acme,acme-staging"
+```
+
+```bash
+curl localhost:7700/v1/recall \
+  -H "Authorization: Bearer $TENANT_KEY" \
+  -H "X-Memrust-Namespace: acme" \
+  -H 'content-type: application/json' \
+  -d '{"query":"what did we decide about pricing?"}'
+```
+
+A key with no `:namespaces` suffix has access to everything, including the
+admin routes `GET /v1/namespaces` and `POST /v1/namespaces/drop`. With no
+`--api-key` at all, authentication is disabled — convenient locally, and the
+server warns loudly if you do it on a non-loopback address.
+
+Upgrading is safe: a data directory written before namespaces existed is
+adopted as the `default` namespace in place, and new namespaces are created
+alongside it.
+
 ### Multi-agent memory
 
 Multiple agents can share one engine while keeping private state private:
@@ -131,7 +166,8 @@ agent id scopes the whole client.
 ```python
 # pip install memrust — stdlib only
 from memrust import MemrustClient
-memory = MemrustClient("http://127.0.0.1:7700", agent_id="planner")
+memory = MemrustClient("http://127.0.0.1:7700", agent_id="planner",
+                       api_key=KEY, namespace="acme")
 memory.remember("user prefers concise answers", kind="semantic", visibility="shared")
 hits = memory.recall("what does the user prefer?", strategy="relational")
 ```
@@ -139,7 +175,8 @@ hits = memory.recall("what does the user prefer?", strategy="relational")
 ```typescript
 // npm install memrust-client — fetch-based, Node 18+/Bun/Deno/browsers
 import { MemrustClient } from "memrust-client";
-const memory = new MemrustClient("http://127.0.0.1:7700", { agentId: "planner" });
+const memory = new MemrustClient("http://127.0.0.1:7700",
+  { agentId: "planner", apiKey: KEY, namespace: "acme" });
 await memory.remember("user prefers concise answers", { kind: "semantic" });
 const hits = await memory.recall("what does the user prefer?");
 ```
