@@ -12,6 +12,8 @@
 //! GET  /v1/entities?limit                  -> { entities: [{name, count}] }
 //! GET  /v1/namespaces                      -> { namespaces } (admin key)
 //! POST /v1/namespaces/drop { namespace }   -> { dropped } (admin key)
+//! GET  /metrics                            -> Prometheus exposition (admin key)
+//! GET  /healthz                            -> liveness, never authenticated
 //! GET  /health                             -> EngineStats
 //! GET  /                                   -> embedded web dashboard
 //!
@@ -21,15 +23,17 @@
 
 use std::sync::Arc;
 
-use axum::extract::{DefaultBodyLimit, Query, State};
+use axum::extract::{DefaultBodyLimit, MatchedPath, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::Html;
+use axum::middleware::Next;
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::server::metrics::{log_request, Metrics};
 use crate::server::tenancy::{extract_key, extract_namespace, ApiKey, Auth, Namespace, Registry};
 use crate::types::{MemoryRecord, RecallRequest, RememberRequest};
 
@@ -48,6 +52,7 @@ fn without_embedding(mut record: MemoryRecord) -> MemoryRecord {
 pub struct AppState {
     registry: Arc<Registry>,
     auth: Auth,
+    metrics: Arc<Metrics>,
 }
 
 type Rejection = (StatusCode, String);
@@ -110,10 +115,58 @@ impl AppState {
 /// bound (an unbounded body is a denial-of-service invitation).
 pub const MAX_BODY_BYTES: usize = 256 * 1024 * 1024;
 
-pub fn router(registry: Arc<Registry>, auth: Auth) -> Router {
+/// Times every request, counts it by matched route and status, and emits one
+/// log line. The *matched* route is used as the label so a metric can't
+/// explode in cardinality from user-supplied paths.
+async fn observe(
+    State(state): State<AppState>,
+    matched: Option<MatchedPath>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let route = matched
+        .map(|m| m.as_str().to_string())
+        .unwrap_or_else(|| "unmatched".to_string());
+    let method = request.method().to_string();
+    let namespace = extract_namespace(request.headers());
+
+    let started = std::time::Instant::now();
+    let response = next.run(request).await;
+    let elapsed = started.elapsed().as_secs_f64();
+    let status = response.status().as_u16();
+
+    state.metrics.record(&route, status, elapsed);
+    log_request(&method, &route, &namespace, status, elapsed * 1000.0);
+    response
+}
+
+/// Metrics can name every namespace, so they need the same key that lists
+/// them. Scrapers send `Authorization: Bearer <key>` like any other client.
+async fn metrics_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, Rejection> {
+    state.require_admin(&headers)?;
+    let body = state.metrics.render(&state.registry);
+    Ok((
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        body,
+    ))
+}
+
+pub fn router(registry: Arc<Registry>, auth: Auth, metrics: Arc<Metrics>) -> Router {
+    let state = AppState {
+        registry,
+        auth,
+        metrics,
+    };
     Router::new()
         .route("/", get(dashboard))
         .route("/dashboard", get(dashboard))
+        .route("/healthz", get(healthz))
         .route("/health", get(health))
         .route("/v1/memories", get(list_memories))
         .route("/v1/entities", get(entities))
@@ -127,11 +180,18 @@ pub fn router(registry: Arc<Registry>, auth: Auth) -> Router {
         .route("/v1/restore", post(restore))
         .route("/v1/namespaces", get(list_namespaces))
         .route("/v1/namespaces/drop", post(drop_namespace))
+        .route("/metrics", get(metrics_handler))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
-        .with_state(AppState { registry, auth })
+        .layer(axum::middleware::from_fn_with_state(state.clone(), observe))
+        .with_state(state)
 }
 
-pub async fn serve(registry: Arc<Registry>, auth: Auth, addr: &str) -> anyhow::Result<()> {
+pub async fn serve(
+    registry: Arc<Registry>,
+    auth: Auth,
+    metrics: Arc<Metrics>,
+    addr: &str,
+) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     println!("memrust listening on http://{addr}");
     if auth.enabled() {
@@ -146,7 +206,7 @@ pub async fn serve(registry: Arc<Registry>, auth: Auth, addr: &str) -> anyhow::R
             );
         }
     }
-    axum::serve(listener, router(registry, auth)).await?;
+    axum::serve(listener, router(registry, auth, metrics)).await?;
     Ok(())
 }
 
@@ -207,6 +267,14 @@ async fn entities(
         .map(|(name, count)| json!({ "name": name, "count": count }))
         .collect();
     Ok(Json(json!({ "entities": entities })))
+}
+
+/// Liveness only: no data, no namespace, no key. Orchestrators need to know
+/// the process is up without holding a credential, and `/health` can't serve
+/// that once authentication is on — it would answer 401 and every container
+/// running with `--api-key` would be marked unhealthy.
+async fn healthz() -> impl IntoResponse {
+    (StatusCode::OK, "ok\n")
 }
 
 async fn health(

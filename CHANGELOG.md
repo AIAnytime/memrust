@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **`GET /metrics`** in Prometheus format: request counters and latency
+  histograms by matched route (so cardinality can't blow up on user-supplied
+  paths), plus per-namespace gauges read live from the registry at scrape
+  time. Needs an unscoped key when authentication is on, since it names every
+  namespace.
+- **`--log-format text|json|off`** — one line per request with method, route,
+  namespace, status and duration.
+- **`GET /healthz`**, an unauthenticated liveness probe. `/health` requires a
+  key once `--api-key` is set, so the Docker healthcheck would have marked
+  every authenticated container unhealthy; it now uses `/healthz`.
+- Official images on Docker Hub: `docker run aianytime/memrust`.
+
 ## 0.6.0 — 2026-07-28
 
 - **Namespaces.** `X-Memrust-Namespace` selects an isolated store. Each

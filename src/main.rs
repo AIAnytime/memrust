@@ -6,6 +6,7 @@ use memrust::embed::{Embedder, HashEmbedder, RemoteEmbedder};
 use memrust::engine::MemoryEngine;
 use memrust::index::vector::{HnswConfig, Quantization, AUTO_QUANTIZE_DIM};
 use memrust::rerank::LlmReranker;
+use memrust::server::metrics::{set_log_format, LogFormat, Metrics};
 use memrust::server::tenancy::{ApiKey, Auth, EngineFactory, MakeReranker, Registry};
 use memrust::summarize::{ExtractiveSummarizer, RemoteSummarizer, Summarizer};
 use memrust::types::{LifecycleConfig, MemoryKind, RecallRequest, RecallStrategy, RememberRequest};
@@ -33,6 +34,11 @@ NAMESPACES & AUTH (serve):
     --api-key <KEY>            require this key; repeat for several keys
     --api-key <KEY>:ns1,ns2    scope a key to specific namespaces
     --namespace <name>         namespace for `mcp` (default: default)
+
+OBSERVABILITY (serve):
+    --log-format text|json|off   one line per request; default text
+    GET /metrics                 Prometheus exposition (needs an unscoped key
+                                 when --api-key is set, since it names namespaces)
 
     Requests pick a namespace with the X-Memrust-Namespace header and present
     a key as `Authorization: Bearer <key>` or `X-API-Key`. Each namespace is a
@@ -451,11 +457,13 @@ async fn main() -> Result<()> {
             let addr = flag(&args, "--addr", "127.0.0.1:7700");
             let registry = build_registry(&args)?;
             let auth = build_auth(&args)?;
+            set_log_format(LogFormat::parse(&flag(&args, "--log-format", "text"))?);
+            let metrics = Arc::new(Metrics::new());
             spawn_lifecycle(
                 registry.clone(),
                 numeric_flag(&args, "--lifecycle-interval-secs", 300)?,
             );
-            memrust::server::http::serve(registry, auth, &addr).await
+            memrust::server::http::serve(registry, auth, metrics, &addr).await
         }
         Some("mcp") => {
             let registry = build_registry(&args)?;

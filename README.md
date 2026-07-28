@@ -139,6 +139,26 @@ Upgrading is safe: a data directory written before namespaces existed is
 adopted as the `default` namespace in place, and new namespaces are created
 alongside it.
 
+### Metrics and logs
+
+`GET /metrics` serves Prometheus exposition: request counts and latency
+histograms by route, plus per-namespace gauges for memories, index sizes,
+graph entities and WAL depth. Engine gauges are read live at scrape time, so
+they can't drift from reality.
+
+```
+memrust_memories{namespace="acme"} 1204
+memrust_request_duration_seconds_bucket{route="/v1/recall",le="0.001"} 812
+memrust_requests_rejected_total 3
+```
+
+Metrics name every namespace, so the endpoint needs an unscoped key when
+`--api-key` is set. `--log-format json` emits one JSON object per request for
+log shippers; `text` (default) is human-readable and `off` disables it.
+
+`GET /healthz` is a liveness probe that is never authenticated — the detailed
+`/health` needs a key once auth is on, and a probe shouldn't hold credentials.
+
 ### Multi-agent memory
 
 Multiple agents can share one engine while keeping private state private:
