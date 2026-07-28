@@ -230,6 +230,25 @@
   pre .c { color: var(--ink-3); } pre .k { color: var(--sig-vector); } pre .s { color: var(--sig-graph); } pre .f { color: var(--brand-ink); }
   [hidden] { display: none !important; }
 
+  /* faq --------------------------------------------------------------- */
+  .faq { border: 1px solid var(--rail-soft); border-radius: 10px; overflow: hidden; }
+  .faq details { border-bottom: 1px solid var(--rail-soft); background: var(--ground); }
+  .faq details:last-child { border-bottom: 0; }
+  .faq summary {
+    cursor: pointer; list-style: none; padding: 1.05rem 1.25rem;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 1.5rem;
+    font-weight: 650; font-size: 1.02rem; letter-spacing: -.012em;
+  }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after {
+    content: "+"; font-family: var(--mono); color: var(--brand);
+    font-size: 1.15rem; line-height: 1; flex: none;
+  }
+  .faq details[open] summary::after { content: "–"; }
+  .faq summary:hover { color: var(--brand); }
+  .faq .a { padding: 0 1.25rem 1.25rem; max-width: 72ch; display: flex; flex-direction: column; gap: .8rem; }
+  .faq .a p { color: var(--ink-2); font-size: .95rem; }
+
   /* roadmap + contact ------------------------------------------------- */
   .road { display: grid; gap: 1px; background: var(--rail-soft); border: 1px solid var(--rail-soft); border-radius: 10px; overflow: hidden; margin-top: 2.4rem; }
   @media (min-width: 820px) { .road { grid-template-columns: repeat(3, 1fr); } }
@@ -276,6 +295,7 @@
       <a href="#why">Why hybrid</a>
       <a href="#benchmarks">Benchmarks</a>
       <a href="#install">Install</a>
+      <a href="#faq">FAQ</a>
       <a href="#contact">Contact</a>
     </nav>
     <button class="btn icon-btn" id="theme" aria-label="Switch between light and dark theme" title="Switch theme">
@@ -630,6 +650,117 @@ claude mcp add memory -- memrust mcp --data-dir ~/.memrust --agent-id planner
       <div class="road-item"><span class="road-t">Shipping now</span><p>Hybrid retrieval, memory lifecycle, multi-agent visibility, MCP, dashboard, SDKs.</p></div>
       <div class="road-item"><span class="road-t">Next</span><p>Streaming replication, per-namespace quotas, LLM entity extraction, hierarchical summarization.</p></div>
       <div class="road-item"><span class="road-t">Then</span><p>Hosted memory with per-agent isolation — the engine stays open, the control plane is the product.</p></div>
+    </div>
+  </section>
+
+
+  <!-- FAQ -->
+  <section class="seam pad" id="faq">
+    <p class="eyebrow">Straight answers</p>
+    <h2 style="max-width:22ch">The questions we <span class="accent">actually get</span>.</h2>
+
+    <div class="faq" style="margin-top:2.4rem">
+      <details open>
+        <summary>Is this just Qdrant + Mem0 in one box?</summary>
+        <div class="a">
+          <p>That stack is two systems: the memory semantics live in Python, the storage lives
+          somewhere else, they talk over a network, and an LLM sits in the loop deciding what
+          to keep. memrust implements the memory semantics <em>inside</em> the storage engine.</p>
+          <p>That's why filters apply during index traversal instead of after it, why it runs
+          with no API keys at all, and why durability is something you can reason about rather
+          than inherit from whatever store you configured underneath.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>So is memrust a vector database?</summary>
+        <div class="a">
+          <p>There's one inside it — HNSW, scalar quantization, a write-ahead log, checkpoint
+          recovery. But that index is one of four retrieval signals, and it isn't the API.</p>
+          <p>A vector database stores an embedding with a metadata blob attached. memrust
+          stores a <em>memory</em>: typed as episodic, semantic, working or procedural; owned
+          by an agent; able to expire; linked to extracted entities; and carrying provenance
+          when it was distilled from older memories.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Do I need an LLM or API keys?</summary>
+        <div class="a">
+          <p>No. The default embedder and summarizer run offline with zero keys — enough to
+          try every feature on this page, including the notebooks.</p>
+          <p>For production quality, point it at OpenAI, Gemini, or a local
+          sentence-transformers server through Ollama, TEI, LM Studio or vLLM. Or skip the
+          embedder entirely and pass your own vectors.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Why not just bolt a keyword index onto my vector DB?</summary>
+        <div class="a">
+          <p>You can — and if you do, you'll rebuild what memrust already is: two indexes,
+          rank fusion, a graph for relationships, jobs for expiry and consolidation, per-agent
+          access rules, and a protocol shim so agents can reach it.</p>
+          <p>The parts that resist bolting on are pre-filtering <em>inside</em> index
+          traversal and per-signal score explanation. Both have to live in the engine; neither
+          can be added by a layer sitting above it.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Can I keep the embedding model I already use?</summary>
+        <div class="a">
+          <p>Yes, and it's the common path. Pass <span class="mono">embedding</span> on write
+          and <span class="mono">query_embedding</span> on recall, and memrust never calls a
+          model — BGE, E5, OpenAI, Voyage, whatever you already run.</p>
+          <p>The first vector fixes a collection's dimension. Mixing models afterwards is
+          rejected with a clear error rather than silently returning nonsense similarities.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Is it production-ready?</summary>
+        <div class="a">
+          <p>It's young and single-node, so be deliberate. What's tested: durability under
+          <span class="mono">kill -9</span> with concurrent writers and checkpoints racing —
+          1,000 acknowledged writes, 1,000 recovered — recall@10 of 1.000 against exact ground
+          truth, and a full suite that runs on every commit.</p>
+          <p>What it isn't: distributed, multi-writer, or scarred by years in production. Run
+          it where a single node fits, which covers most agent workloads today.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>How does it fit into my agent framework?</summary>
+        <div class="a">
+          <p>Three ways. As an <span class="mono">MCP</span> server, which is how Claude Code
+          and Claude Desktop pick it up — the agent gets remember, recall and forget as native
+          tools. Over HTTP with the Python or TypeScript SDK, for LangGraph, CrewAI, the
+          OpenAI SDK or anything else. Or as a Rust library, embedded with no server at all.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>What's the license, and how does this make money?</summary>
+        <div class="a">
+          <p>Apache-2.0, permanently. The engine is meant to be read, forked and self-hosted,
+          and nothing on this page is behind a paywall.</p>
+          <p>The commercial layer is the part a single node can't do: fleets of agents sharing
+          memory across machines, with isolation, quotas and replication. Open core, hosted
+          control plane.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Why Rust?</summary>
+        <div class="a">
+          <p>Because this is a storage engine. Cache-friendly layouts, SIMD-friendly distance
+          kernels, and predictable latency with no garbage collector pausing in the middle of
+          a recall.</p>
+          <p>It's also why the whole thing ships as one static binary with no runtime to
+          install — the same reason Qdrant is written in Rust.</p>
+        </div>
+      </details>
     </div>
   </section>
 
