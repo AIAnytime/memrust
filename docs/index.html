@@ -295,6 +295,7 @@
       <a href="#why">Why hybrid</a>
       <a href="#benchmarks">Benchmarks</a>
       <a href="#install">Install</a>
+      <a href="#production">Production</a>
       <a href="#faq">FAQ</a>
       <a href="#contact">Contact</a>
     </nav>
@@ -322,7 +323,7 @@
         <a class="btn" href="https://github.com/AIAnytime/memrust">Read the source</a>
       </div>
       <div class="facts">
-        <span>Rust</span><span>Apache-2.0</span><span>single binary</span><span>MCP built in</span><span>Python &amp; TypeScript SDKs</span>
+        <span>Rust</span><span>Apache-2.0</span><span>single binary</span><span>MCP built in</span><span>multi-tenant</span><span>Python &amp; TypeScript SDKs</span>
       </div>
     </div>
 
@@ -537,12 +538,15 @@
           <tr><td>TTLs &amp; automatic consolidation</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="partial">cron</td><td class="no">—</td></tr>
           <tr><td>Multi-agent private/shared memory</td><td class="yes">✓</td><td class="partial">filters</td><td class="partial">filters</td><td class="no">—</td><td class="partial">policies</td><td class="partial">filters</td></tr>
           <tr><td>MCP server for agent runtimes</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+          <tr><td>Tenants as fully separate indexes</td><td class="yes">✓</td><td class="partial">collections</td><td class="partial">collections</td><td class="no">—</td><td class="partial">schemas</td><td class="partial">tables</td></tr>
+          <tr><td>API keys scoped per tenant</td><td class="yes">✓</td><td class="partial">one key/JWT</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td></tr>
+          <tr><td>Prometheus metrics</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="partial">exporter</td><td class="no">—</td></tr>
           <tr><td>Built-in dashboard</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
         </tbody>
       </table>
     </div>
     <p class="mono" style="margin-top:1rem;font-size:var(--step--1);color:var(--ink-3)">
-      ✓ built in · setup/DIY/cron/filters/policies = possible, you build it · — not available
+      ✓ built in · anything else in that column = possible, you build it · — not available
     </p>
 
     <h3 style="margin-top:3.2rem">Vector search, head to head</h3>
@@ -587,8 +591,8 @@
 cargo install memrust
 memrust serve
 
-<span class="c"># or with Docker</span>
-docker run -p 7700:7700 -v memrust-data:/data memrust</pre></div>
+<span class="c"># or the official image — multi-arch, 36 MB, non-root</span>
+docker run -p 7700:7700 -v memrust-data:/data aianytime/memrust</pre></div>
 
         <div role="tabpanel" id="p-py" aria-labelledby="t-py" hidden><pre><span class="c"># pip install memrust</span>
 <span class="k">from</span> memrust <span class="k">import</span> MemrustClient
@@ -632,8 +636,62 @@ claude mcp add memory -- memrust mcp --data-dir ~/.memrust --agent-id planner
     </div>
 
     <div class="facts" style="margin-top:1.6rem">
-      <span>crates.io</span><span>PyPI</span><span>npm</span><span>prebuilt Linux &amp; macOS binaries</span>
+      <span>crates.io</span><span>PyPI</span><span>npm</span><span>Docker Hub</span><span>prebuilt Linux &amp; macOS binaries</span>
     </div>
+  </section>
+
+  <!-- PRODUCTION -->
+  <section class="seam pad" id="production">
+    <p class="eyebrow">Run it for real</p>
+    <h2 style="max-width:24ch">Multi-tenant, authenticated, <span class="accent">observable</span>.</h2>
+    <p class="prose" style="margin-top:1.3rem;margin-bottom:2.6rem">
+      The demo path needs no keys and no config. The production path is the same binary with
+      flags — tenants that can't see each other, keys scoped to them, and metrics your
+      existing Prometheus already knows how to scrape.
+    </p>
+
+    <div class="grid-4">
+      <div class="cell">
+        <div class="cell-h"><span class="dot" style="background:var(--sig-vector)"></span>namespaces</div>
+        <h3>Isolation, not a filter</h3>
+        <p>A namespace is a <em>separate engine</em> — its own indexes, WAL, checkpoint, embedding dimension and directory. One tenant's ingest can't slow another's recall, and dropping one deletes a directory instead of scanning a shared index.</p>
+      </div>
+      <div class="cell">
+        <div class="cell-h"><span class="dot" style="background:var(--sig-lexical)"></span>api keys</div>
+        <h3>Scoped per tenant</h3>
+        <p>Keys can be pinned to specific namespaces, arrive as a bearer token or header, and compare in constant time. Admin routes need an unscoped key. Leave keys off and it stays open — but says so, loudly, on a non-loopback address.</p>
+      </div>
+      <div class="cell">
+        <div class="cell-h"><span class="dot" style="background:var(--sig-graph)"></span>metrics</div>
+        <h3>Prometheus &amp; JSON logs</h3>
+        <p>Request counts and latency histograms by matched route, plus per-namespace gauges for memories, index size, entities and WAL depth — read live at scrape time, so they can't drift. One JSON line per request for your log shipper.</p>
+      </div>
+      <div class="cell">
+        <div class="cell-h"><span class="dot" style="background:var(--sig-recency)"></span>deploy</div>
+        <h3>One image, both arches</h3>
+        <p>Official multi-arch image for amd64 and arm64, 36 MB, non-root, <span class="mono">/data</span> as a volume. Liveness is an unauthenticated <span class="mono">/healthz</span>, so probes never need to hold a credential.</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:2.4rem">
+      <pre><span class="c"># one admin key, one tenant key pinned to its own namespaces</span>
+docker run -p 7700:7700 -v memrust-data:/data aianytime/memrust:0.6.1 \
+  serve --addr 0.0.0.0:7700 --data-dir /data --log-format json \
+  --api-key <span class="s">"$ADMIN_KEY"</span> \
+  --api-key <span class="s">"$ACME_KEY:acme,acme-staging"</span>
+
+<span class="c"># every request picks its tenant; the key decides if that's allowed</span>
+curl localhost:7700/v1/recall \
+  -H <span class="s">"Authorization: Bearer $ACME_KEY"</span> \
+  -H <span class="s">"X-Memrust-Namespace: acme"</span> \
+  -d <span class="s">'{"query":"what did we decide about pricing?"}'</span></pre>
+    </div>
+
+    <p class="prose" style="margin-top:1.6rem">
+      Upgrading from a single-tenant deployment is safe: a data directory written before
+      namespaces existed is adopted as <span class="mono">default</span> in place, and new
+      namespaces are created alongside it.
+    </p>
   </section>
 
   <!-- WHERE IT'S GOING -->
@@ -642,14 +700,15 @@ claude mcp add memory -- memrust mcp --data-dir ~/.memrust --agent-id planner
     <h2 style="max-width:24ch">The engine is open. The <span class="accent">hard part</span> is shared memory.</h2>
     <p class="prose" style="margin-top:1.3rem">
       memrust is Apache-2.0 and will stay that way — an engine you can read, fork and run
-      on your own hardware. What comes next is the part single-node can't solve: fleets of
-      agents sharing memory across machines, with isolation, quotas and replication. Open
-      core, hosted control plane.
+      on your own hardware. Isolation and authentication are in the open engine, because
+      you need them to self-host. What comes next is the part a single node can't solve:
+      fleets of agents sharing memory across machines, with quotas, replication and
+      operations someone else runs. Open core, hosted control plane.
     </p>
     <div class="road">
-      <div class="road-item"><span class="road-t">Shipping now</span><p>Hybrid retrieval, memory lifecycle, multi-agent visibility, MCP, dashboard, SDKs.</p></div>
-      <div class="road-item"><span class="road-t">Next</span><p>Streaming replication, per-namespace quotas, LLM entity extraction, hierarchical summarization.</p></div>
-      <div class="road-item"><span class="road-t">Then</span><p>Hosted memory with per-agent isolation — the engine stays open, the control plane is the product.</p></div>
+      <div class="road-item"><span class="road-t">Shipping now</span><p>Hybrid retrieval, memory lifecycle, multi-agent visibility, namespaces, scoped API keys, metrics, MCP, dashboard, SDKs, Docker image.</p></div>
+      <div class="road-item"><span class="road-t">Next</span><p>Scheduled backup and restore to object storage, per-namespace quotas, LLM entity extraction, hierarchical summarization.</p></div>
+      <div class="road-item"><span class="road-t">Then</span><p>Read replicas over WAL streaming, and hosted memory with per-tenant isolation — the engine stays open, the control plane is the product.</p></div>
     </div>
   </section>
 
@@ -722,10 +781,11 @@ claude mcp add memory -- memrust mcp --data-dir ~/.memrust --agent-id planner
         <summary>Is it production-ready?</summary>
         <div class="a">
           <p>It's young and single-node, so be deliberate. What's there: API keys scoped to
-          namespaces, isolated stores with their own indexes and directories, and durability
-          tested under <span class="mono">kill -9</span> with concurrent writers and
-          checkpoints racing — 1,000 acknowledged writes, 1,000 recovered — plus recall@10 of
-          1.000 against exact ground truth and a suite that runs on every commit.</p>
+          namespaces, isolated stores with their own indexes and directories, Prometheus
+          metrics and JSON request logs, an official multi-arch image, and durability tested
+          under <span class="mono">kill -9</span> with concurrent writers and checkpoints
+          racing — 1,000 acknowledged writes, 1,000 recovered — plus recall@10 of 1.000
+          against exact ground truth and a suite that runs on every commit.</p>
           <p>What it isn't: distributed, multi-writer, or scarred by years in production. Run
           it where a single node fits, which covers most agent workloads today.</p>
         </div>
