@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>memrust — memory infrastructure for AI agents</title>
-<meta name="description" content="An agent-native memory engine in Rust. Hybrid retrieval — vectors, keywords, an entity graph and recency — behind remember/recall/forget, with every result explaining why it surfaced.">
+<meta name="description" content="Memory infrastructure for AI agents. One endpoint Claude Code, Cursor, Codex, LangGraph and CrewAI all share — hybrid retrieval over vectors, keywords, an entity graph and recency, with every result explaining why it surfaced.">
 <script>
   try { var t = localStorage.getItem("memrust-site-theme"); if (t) document.documentElement.setAttribute("data-theme", t); } catch (e) {}
 </script>
@@ -252,6 +252,19 @@
   /* roadmap + contact ------------------------------------------------- */
   .road { display: grid; gap: 1px; background: var(--rail-soft); border: 1px solid var(--rail-soft); border-radius: 10px; overflow: hidden; margin-top: 2.4rem; }
   @media (min-width: 820px) { .road { grid-template-columns: repeat(3, 1fr); } }
+  /* the agent grid: names, not logos — nobody has licensed us their mark */
+  .clients { display: grid; gap: 1px; background: var(--rail); border: 1px solid var(--rail); border-radius: 12px; overflow: hidden;
+             grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+  .client { background: var(--panel); padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: .2rem; }
+  .client b { font-size: .98rem; letter-spacing: -.01em; }
+  .client span { font-family: var(--mono); font-size: var(--step--1); color: var(--ink-3); }
+  .split-wide { display: grid; gap: 2rem; align-items: start; }
+  @media (min-width: 920px) { .split-wide { grid-template-columns: 1fr 1.05fr; } }
+  .split-wide img { width: 100%; height: auto; border: 1px solid var(--rail); border-radius: 10px; display: block; }
+  .row-between { display: flex; gap: 1rem; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+  .beta-chip { font-family: var(--mono); font-size: var(--step--1); letter-spacing: .04em;
+               color: var(--brand-ink); border: 1px solid var(--brand); border-radius: 99px;
+               padding: .3rem .8rem; white-space: nowrap; }
   .road-item { background: var(--ground); padding: 1.4rem 1.3rem; display: flex; flex-direction: column; gap: .5rem; }
   .road-t { font-family: var(--mono); font-size: var(--step--1); letter-spacing: .1em; text-transform: uppercase; color: var(--brand-ink); }
   .road-item p { color: var(--ink-2); font-size: .93rem; }
@@ -291,11 +304,11 @@
       memrust
     </a>
     <nav>
-      <a href="#layer">The layer</a>
       <a href="#why">Why hybrid</a>
+      <a href="#shared">Every agent</a>
       <a href="#benchmarks">Benchmarks</a>
       <a href="#install">Install</a>
-      <a href="#production">Production</a>
+      <a href="#hosted">Hosted</a>
       <a href="#faq">FAQ</a>
       <a href="#contact">Contact</a>
     </nav>
@@ -323,7 +336,7 @@
         <a class="btn" href="https://github.com/AIAnytime/memrust">Read the source</a>
       </div>
       <div class="facts">
-        <span>Rust</span><span>Apache-2.0</span><span>single binary</span><span>MCP built in</span><span>multi-tenant</span><span>Python &amp; TypeScript SDKs</span>
+        <span>Rust</span><span>Apache-2.0</span><span>single binary</span><span>MCP over HTTP</span><span>multi-tenant</span><span>Python &amp; TypeScript SDKs</span>
       </div>
     </div>
 
@@ -489,6 +502,57 @@
     </div>
   </section>
 
+  <!-- ONE MEMORY, EVERY AGENT -->
+  <section class="seam pad" id="shared">
+    <p class="eyebrow">One memory, every agent</p>
+    <h2 style="max-width:26ch">Your tools each remember <span class="accent">separately</span>. They shouldn't.</h2>
+    <p class="prose" style="margin-top:1.3rem;margin-bottom:2.4rem">
+      Claude Code learns something about your codebase. Cursor learns it again.
+      Your LangGraph agent never finds out at all. Memory that lives inside one
+      tool is not memory — it is a cache with a short life. memrust is one
+      endpoint they all read and write, so what any of them learns, all of them
+      know.
+    </p>
+
+    <div class="clients">
+      <div class="client"><b>Claude Code</b><span>MCP over HTTP</span></div>
+      <div class="client"><b>Claude Desktop</b><span>MCP over HTTP</span></div>
+      <div class="client"><b>claude.ai</b><span>custom connector</span></div>
+      <div class="client"><b>Cursor</b><span>MCP over HTTP</span></div>
+      <div class="client"><b>Windsurf</b><span>MCP over HTTP</span></div>
+      <div class="client"><b>Codex &amp; others</b><span>MCP over HTTP</span></div>
+      <div class="client"><b>LangGraph</b><span>Python SDK</span></div>
+      <div class="client"><b>CrewAI</b><span>Python SDK</span></div>
+      <div class="client"><b>Your own stack</b><span>HTTP, no SDK needed</span></div>
+    </div>
+
+    <div class="split-wide" style="margin-top:2.6rem">
+      <div>
+        <h3 style="font-size:var(--step-1)">One command, then they share a brain</h3>
+        <pre style="margin-top:1rem"><span class="c"># point Claude Code at hosted memory</span>
+claude mcp add --transport http memrust \
+  https://your-project.memrust.dev/mcp \
+  --header <span class="s">"Authorization: Bearer mr_live_..."</span>
+
+<span class="c"># the same URL and key in Cursor, Codex, claude.ai —</span>
+<span class="c"># now ask any of them: "what did we decide about pricing?"</span></pre>
+        <p class="prose" style="margin-top:1.2rem">
+          Four tools — <span class="mono">remember</span>,
+          <span class="mono">recall</span>, <span class="mono">forget</span>,
+          <span class="mono">entities</span> — and recall hands the agent the
+          per-signal breakdown, so it can weigh a strong semantic match against
+          a lucky keyword hit instead of trusting an opaque number.
+        </p>
+      </div>
+      <div>
+        <img src="console.png" alt="The memrust console: a recall for INC-90312 with per-signal score bars for vector, lexical, graph and recency, alongside the write panel and extracted entities" loading="lazy">
+        <p class="mono" style="margin-top:.7rem;font-size:var(--step--1);color:var(--ink-3)">
+          The console. Same memory the agents see.
+        </p>
+      </div>
+    </div>
+  </section>
+
   <!-- STATS -->
   <section class="seam">
     <div class="pad" style="padding-bottom:0">
@@ -538,6 +602,7 @@
           <tr><td>TTLs &amp; automatic consolidation</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="partial">cron</td><td class="no">—</td></tr>
           <tr><td>Multi-agent private/shared memory</td><td class="yes">✓</td><td class="partial">filters</td><td class="partial">filters</td><td class="no">—</td><td class="partial">policies</td><td class="partial">filters</td></tr>
           <tr><td>MCP server for agent runtimes</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+          <tr><td>One endpoint every agent shares</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
           <tr><td>Tenants as fully separate indexes</td><td class="yes">✓</td><td class="partial">collections</td><td class="partial">collections</td><td class="no">—</td><td class="partial">schemas</td><td class="partial">tables</td></tr>
           <tr><td>API keys scoped per tenant</td><td class="yes">✓</td><td class="partial">one key/JWT</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td></tr>
           <tr><td>Prometheus metrics</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="partial">exporter</td><td class="no">—</td></tr>
@@ -694,6 +759,56 @@ curl localhost:7700/v1/recall \
     </p>
   </section>
 
+  <!-- HOSTED -->
+  <section class="seam pad" id="hosted">
+    <div class="row-between">
+      <div>
+        <p class="eyebrow">Hosted · private beta</p>
+        <h2 style="max-width:24ch">Don't want to run it? <span class="accent">Don't.</span></h2>
+      </div>
+      <span class="beta-chip">Taking design partners now</span>
+    </div>
+
+    <p class="prose" style="margin-top:1.3rem;margin-bottom:2.4rem">
+      Self-hosting stays free and uncapped forever — that is the whole point of an
+      Apache-2.0 engine. memrust Cloud is for teams who would rather not operate a
+      stateful service: sign up, create a project, get a key, and point every agent
+      at one URL.
+    </p>
+
+    <div class="grid-4">
+      <div class="cell">
+        <div class="cell-h"><span class="dot" style="background:var(--sig-vector)"></span>projects</div>
+        <h3>Isolated by construction</h3>
+        <p>Every project is its own engine — own indexes, own WAL, own directory. The namespace is pinned by your key, so a request cannot reach another tenant's memory even if it asks to.</p>
+      </div>
+      <div class="cell">
+        <div class="cell-h"><span class="dot" style="background:var(--sig-lexical)"></span>keys</div>
+        <h3>Scoped and revocable</h3>
+        <p>Keys are shown once and stored as hashes. Revoking one stops it on the next request. Every account, project and key change lands in an audit log.</p>
+      </div>
+      <div class="cell">
+        <div class="cell-h"><span class="dot" style="background:var(--sig-graph)"></span>mcp</div>
+        <h3>Hosted, not stdio</h3>
+        <p>One HTTPS endpoint instead of a binary on every machine — which is what lets claude.ai and hosted agents share the same memory as your laptop.</p>
+      </div>
+      <div class="cell">
+        <div class="cell-h"><span class="dot" style="background:var(--sig-recency)"></span>usage</div>
+        <h3>Metered, with a console</h3>
+        <p>Requests, recalls and stored memories per project per month, with live index stats and a recall playground that shows the per-signal breakdown.</p>
+      </div>
+    </div>
+
+    <div class="cta-row" style="margin-top:2.4rem">
+      <a class="btn btn-brand" href="mailto:aianytime07@gmail.com?subject=memrust%20Cloud%20—%20design%20partner">Ask for beta access →</a>
+      <a class="btn" href="#install">Or self-host it now</a>
+    </div>
+    <p class="mono" style="margin-top:1rem;font-size:var(--step--1);color:var(--ink-3);line-height:1.6">
+      Free tier: 3 projects · 25,000 requests/month · 10,000 memories.
+      Cloud from $49/month. Self-hosted: unlimited, because you run it.
+    </p>
+  </section>
+
   <!-- WHERE IT'S GOING -->
   <section class="seam pad">
     <p class="eyebrow">Where this is going</p>
@@ -701,14 +816,14 @@ curl localhost:7700/v1/recall \
     <p class="prose" style="margin-top:1.3rem">
       memrust is Apache-2.0 and will stay that way — an engine you can read, fork and run
       on your own hardware. Isolation and authentication are in the open engine, because
-      you need them to self-host. What comes next is the part a single node can't solve:
+      you need them to self-host. What you pay for is the part a single node can't solve:
       fleets of agents sharing memory across machines, with quotas, replication and
       operations someone else runs. Open core, hosted control plane.
     </p>
     <div class="road">
       <div class="road-item"><span class="road-t">Shipping now</span><p>Hybrid retrieval, memory lifecycle, multi-agent visibility, namespaces, scoped API keys, metrics, MCP, dashboard, SDKs, Docker image.</p></div>
-      <div class="road-item"><span class="road-t">Next</span><p>Scheduled backup and restore to object storage, per-namespace quotas, LLM entity extraction, hierarchical summarization.</p></div>
-      <div class="road-item"><span class="road-t">Then</span><p>Read replicas over WAL streaming, and hosted memory with per-tenant isolation — the engine stays open, the control plane is the product.</p></div>
+      <div class="road-item"><span class="road-t">In private beta</span><p>Hosted memory: projects, scoped keys, metering, audit, and MCP over HTTP so every agent shares one endpoint.</p></div>
+      <div class="road-item"><span class="road-t">Next</span><p>Backup and restore to object storage, read replicas over WAL streaming, LLM entity extraction, hierarchical summarization.</p></div>
     </div>
   </section>
 
@@ -786,6 +901,10 @@ curl localhost:7700/v1/recall \
           under <span class="mono">kill -9</span> with concurrent writers and checkpoints
           racing — 1,000 acknowledged writes, 1,000 recovered — plus recall@10 of 1.000
           against exact ground truth and a suite that runs on every commit.</p>
+          <p>The hosted control plane is in private beta: projects, scoped keys, metering,
+          audit and MCP over HTTP all work and are covered by an end-to-end suite that
+          specifically tries to break cross-tenant isolation. Billing and email are not
+          wired yet, which is exactly why it is beta and not GA.</p>
           <p>What it isn't: distributed, multi-writer, or scarred by years in production. Run
           it where a single node fits, which covers most agent workloads today.</p>
         </div>
@@ -806,9 +925,25 @@ curl localhost:7700/v1/recall \
         <div class="a">
           <p>Apache-2.0, permanently. The engine is meant to be read, forked and self-hosted,
           and nothing on this page is behind a paywall.</p>
-          <p>The commercial layer is the part a single node can't do: fleets of agents sharing
-          memory across machines, with isolation, quotas and replication. Open core, hosted
-          control plane.</p>
+          <p>The commercial layer is hosted memory — projects, scoped keys, metering, audit
+          and one MCP endpoint every agent shares — for teams who would rather not operate a
+          stateful service. Free tier is 3 projects and 25,000 requests a month; Cloud starts
+          at $49. Self-hosting stays unlimited, because you are the one running it.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Do all my agents really share one memory?</summary>
+        <div class="a">
+          <p>Yes, and that is the point. Claude Code, Claude Desktop, claude.ai, Cursor,
+          Windsurf and Codex all speak MCP, so they take the same URL and key. LangGraph,
+          CrewAI and anything else take the HTTP API or an SDK. They read and write one
+          project, so a fact Cursor learns is one your LangGraph agent can recall a week
+          later.</p>
+          <p>Where agents should <em>not</em> see each other, they don't: a memory owned by an
+          agent is private unless it is published, and that rule is applied inside the index
+          traversal rather than as a filter over results — so it cannot leak through ranking
+          either.</p>
         </div>
       </details>
 
