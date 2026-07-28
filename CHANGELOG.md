@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 — 2026-07-28
 
 - **`GET /metrics`** in Prometheus format: request counters and latency
   histograms by matched route (so cardinality can't blow up on user-supplied

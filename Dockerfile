@@ -1,9 +1,16 @@
 # Build stage
 FROM rust:1.96-slim AS build
 WORKDIR /app
+# Build dependencies against a stub first so they stay cached when only the
+# sources change — a rebuild after editing src/ skips recompiling the tree.
 COPY Cargo.toml Cargo.lock ./
+RUN mkdir -p src && echo "fn main() {}" > src/main.rs \
+    && echo "" > src/lib.rs \
+    && cargo build --release \
+    && rm -rf src
 COPY src ./src
-RUN cargo build --release
+# Touch so cargo notices the real sources are newer than the stub artifacts.
+RUN touch src/main.rs src/lib.rs && cargo build --release
 
 # Runtime stage
 FROM debian:bookworm-slim
