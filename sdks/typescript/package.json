@@ -1,6 +1,6 @@
 {
   "name": "memrust-client",
-  "version": "0.5.4",
+  "version": "0.6.0",
   "description": "Zero-dependency TypeScript client for the memrust agent memory engine",
   "license": "Apache-2.0",
   "type": "module",

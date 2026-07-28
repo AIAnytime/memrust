@@ -721,10 +721,11 @@ claude mcp add memory -- memrust mcp --data-dir ~/.memrust --agent-id planner
       <details>
         <summary>Is it production-ready?</summary>
         <div class="a">
-          <p>It's young and single-node, so be deliberate. What's tested: durability under
-          <span class="mono">kill -9</span> with concurrent writers and checkpoints racing —
-          1,000 acknowledged writes, 1,000 recovered — recall@10 of 1.000 against exact ground
-          truth, and a full suite that runs on every commit.</p>
+          <p>It's young and single-node, so be deliberate. What's there: API keys scoped to
+          namespaces, isolated stores with their own indexes and directories, and durability
+          tested under <span class="mono">kill -9</span> with concurrent writers and
+          checkpoints racing — 1,000 acknowledged writes, 1,000 recovered — plus recall@10 of
+          1.000 against exact ground truth and a suite that runs on every commit.</p>
           <p>What it isn't: distributed, multi-writer, or scarred by years in production. Run
           it where a single node fits, which covers most agent workloads today.</p>
         </div>

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "memrust"
-version = "0.5.4"
+version = "0.6.0"
 description = "Zero-dependency Python client for the memrust agent memory engine"
 readme = { text = "Python SDK for memrust. See the repository README.", content-type = "text/markdown" }
 requires-python = ">=3.9"

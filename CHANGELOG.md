@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 — 2026-07-28
 
 - **Namespaces.** `X-Memrust-Namespace` selects an isolated store. Each
   namespace is a separate engine with its own indexes, WAL, checkpoint,
