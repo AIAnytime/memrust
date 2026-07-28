@@ -1,5 +1,9 @@
 # Build stage
-FROM rust:1.96-slim AS build
+# Pinned to bookworm to match the runtime stage: the default
+# rust:slim tag has moved to trixie, whose glibc is newer than
+# bookworm's, and the binary then fails to start with
+# `GLIBC_2.39 not found`.
+FROM rust:1.96-slim-bookworm AS build
 WORKDIR /app
 # Build dependencies against a stub first so they stay cached when only the
 # sources change — a rebuild after editing src/ skips recompiling the tree.

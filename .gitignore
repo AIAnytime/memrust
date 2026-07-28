@@ -17,8 +17,6 @@ __pycache__/
 bench-results.json
 bench-agent-recall.json
 bench-agent-embeddings.npz
-
-# Fundraising material — private, never publish
 memrust-investor-deck.pptx
 DECK_NOTES.md
 build_deck.py
@@ -27,3 +25,6 @@ startup_ecosystem_database.xlsx
 startup_ecosystem_csv/
 STARTUP_ECOSYSTEM_SUMMARY.md
 build_db.py
+
+# Commercial control plane — licensing undecided, see control-plane/LICENSE
+control-plane/

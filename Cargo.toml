@@ -10,6 +10,7 @@ keywords = ["ai", "agents", "memory", "vector-search", "mcp"]
 categories = ["database-implementations", "data-structures"]
 exclude = [
     "assets/",
+    "control-plane/",
     "notebooks/",
     ".github/",
     "sdks/",
