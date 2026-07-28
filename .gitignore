@@ -22,3 +22,4 @@ bench-agent-embeddings.npz
 memrust-investor-deck.pptx
 DECK_NOTES.md
 build_deck.py
+.deck-dash.png
