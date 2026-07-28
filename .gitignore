@@ -23,3 +23,7 @@ memrust-investor-deck.pptx
 DECK_NOTES.md
 build_deck.py
 .deck-dash.png
+startup_ecosystem_database.xlsx
+startup_ecosystem_csv/
+STARTUP_ECOSYSTEM_SUMMARY.md
+build_db.py
