@@ -17,3 +17,8 @@ __pycache__/
 bench-results.json
 bench-agent-recall.json
 bench-agent-embeddings.npz
+
+# Fundraising material — private, never publish
+memrust-investor-deck.pptx
+DECK_NOTES.md
+build_deck.py
