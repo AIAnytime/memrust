@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>memrust — memory infrastructure for AI agents</title>
+<meta name="description" content="An agent-native memory engine in Rust. Hybrid retrieval — vectors, keywords, an entity graph and recency — behind remember/recall/forget, with every result explaining why it surfaced.">
+<script>
+  try { var t = localStorage.getItem("memrust-site-theme"); if (t) document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<style>
+  /* ------------------------------------------------------------------
+     memrust.dev — the four retrieval signals are the design system.
+     vector / lexical / graph / recency carry the same hues here that
+     they carry in the product's own dashboard.
+     ------------------------------------------------------------------ */
+  :root {
+    color-scheme: dark;
+    --ink:        #f4f1ec;
+    --ink-2:      #b3ada3;
+    --ink-3:      #7d776e;
+    --ground:     #0d0b0a;   /* near-black, warmed toward the brand hue */
+    --ground-2:   #151211;
+    --panel:      #191614;
+    --rail:       #2b2622;
+    --rail-soft:  #201c19;
+    --brand:      #f97316;
+    --brand-ink:  #fb9a4e;
+    --sig-vector: #3987e5;
+    --sig-lexical:#d95926;
+    --sig-graph:  #199e70;
+    --sig-recency:#c98500;
+    --shell: min(1180px, 100% - 3rem);
+    --step--1: clamp(.75rem, .72rem + .12vw, .82rem);
+    --step-0:  clamp(1rem, .96rem + .2vw, 1.09rem);
+    --step-1:  clamp(1.2rem, 1.1rem + .5vw, 1.5rem);
+    --step-2:  clamp(1.6rem, 1.3rem + 1.4vw, 2.4rem);
+    --step-3:  clamp(2.1rem, 1.55rem + 2.2vw, 3.55rem);
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:where(:not([data-theme="dark"])) {
+      color-scheme: light;
+      --ink: #17130f; --ink-2: #554e46; --ink-3: #857d73;
+      --ground: #f7f4ef; --ground-2: #efeae2; --panel: #ffffff;
+      --rail: #ded7cc; --rail-soft: #e8e2d8;
+      --brand: #ea580c; --brand-ink: #c2410c;
+      --sig-vector: #2a78d6; --sig-lexical: #c2410c; --sig-graph: #17845f; --sig-recency: #9a6a00;
+    }
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --ink: #17130f; --ink-2: #554e46; --ink-3: #857d73;
+    --ground: #f7f4ef; --ground-2: #efeae2; --panel: #ffffff;
+    --rail: #ded7cc; --rail-soft: #e8e2d8;
+    --brand: #ea580c; --brand-ink: #c2410c;
+    --sig-vector: #2a78d6; --sig-lexical: #c2410c; --sig-graph: #17845f; --sig-recency: #9a6a00;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation: none !important; transition: none !important; } }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); font-size: var(--step-0); line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  ::selection { background: var(--brand); color: #16100a; }
+  :focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 3px; }
+
+  /* The framed console: rails down both sides, ticks at each section seam. */
+  .frame { width: var(--shell); margin-inline: auto; border-inline: 1px solid var(--rail-soft); position: relative; }
+  .seam { border-top: 1px solid var(--rail); position: relative; }
+  .seam::before, .seam::after {
+    content: ""; position: absolute; top: -3px; width: 5px; height: 5px; background: var(--brand);
+  }
+  .seam::before { left: -3px; } .seam::after { right: -3px; }
+  .pad { padding: clamp(3rem, 7vw, 6.5rem) clamp(1.1rem, 3.4vw, 3rem); }
+  section[id] { scroll-margin-top: 4.5rem; }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: var(--step--1); letter-spacing: .14em;
+    text-transform: uppercase; color: var(--brand-ink); margin: 0 0 1.4rem;
+  }
+  h1, h2, h3 { font-weight: 800; letter-spacing: -.025em; text-wrap: balance; margin: 0; line-height: 1.03; }
+  h1 { font-size: var(--step-3); }
+  h2 { font-size: var(--step-2); line-height: 1.08; }
+  h3 { font-size: var(--step-1); letter-spacing: -.015em; }
+  .accent { color: var(--brand); font-style: italic; font-weight: 800; }
+  p { margin: 0; }
+  .lede { color: var(--ink-2); font-size: var(--step-1); line-height: 1.5; max-width: 40ch; font-weight: 400; letter-spacing: -.01em; }
+  .prose { color: var(--ink-2); max-width: 62ch; }
+  .mono { font-family: var(--mono); }
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  /* header ---------------------------------------------------------- */
+  header { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--ground) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--rail-soft); }
+  .bar { width: var(--shell); margin-inline: auto; display: flex; align-items: center; gap: .85rem; padding: .7rem clamp(1.1rem, 3.4vw, 3rem); }
+  .wordmark { display: flex; align-items: center; gap: .55rem; font-weight: 800; letter-spacing: -.02em; font-size: 1.05rem; text-decoration: none; }
+  .chip {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .08em; color: var(--ink-3);
+    border: 1px solid var(--rail); border-radius: 4px; padding: .16rem .42rem;
+  }
+  nav { display: none; gap: 1.4rem; margin-inline: auto; font-size: .92rem; }
+  nav a { color: var(--ink-2); text-decoration: none; }
+  nav a:hover { color: var(--ink); }
+  @media (min-width: 900px) { nav { display: flex; } }
+  .btn {
+    display: inline-flex; align-items: center; gap: .45rem; text-decoration: none;
+    font-size: .9rem; font-weight: 600; padding: .5rem .9rem; border-radius: 7px;
+    border: 1px solid var(--rail); color: var(--ink); background: var(--ground-2);
+    transition: border-color .15s, background .15s;
+  }
+  .btn:hover { border-color: var(--ink-3); }
+  .btn-brand { background: var(--brand); border-color: var(--brand); color: #180f07; }
+  .btn-brand:hover { background: var(--brand-ink); border-color: var(--brand-ink); }
+  .icon-btn { padding: .45rem .55rem; line-height: 0; }
+  .icon-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .i-sun { display: inline; } .i-moon { display: none; }
+  :root[data-theme="light"] .i-sun { display: none; } :root[data-theme="light"] .i-moon { display: inline; }
+  @media (prefers-color-scheme: light) {
+    :root:where(:not([data-theme="dark"])) .i-sun { display: none; }
+    :root:where(:not([data-theme="dark"])) .i-moon { display: inline; }
+  }
+
+  /* hero ------------------------------------------------------------ */
+  .hero { display: grid; gap: clamp(2.2rem, 4vw, 3.4rem); }
+  @media (min-width: 960px) { .hero { grid-template-columns: 1.12fr .88fr; align-items: center; } }
+  .cta-row { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: 2rem; }
+  .facts { display: flex; flex-wrap: wrap; gap: .5rem 1.1rem; margin-top: 1.8rem; font-family: var(--mono); font-size: var(--step--1); color: var(--ink-3); }
+  .facts span::after { content: "·"; margin-left: 1.1rem; color: var(--rail); }
+  .facts span:last-child::after { content: ""; }
+
+  /* the live recall card — the product's actual output ---------------- */
+  .card { background: var(--panel); border: 1px solid var(--rail); border-radius: 12px; overflow: hidden; }
+  .card-top {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: .6rem .9rem; border-bottom: 1px solid var(--rail);
+    font-family: var(--mono); font-size: var(--step--1); color: var(--ink-3);
+  }
+  .hit { padding: .85rem .9rem; border-bottom: 1px solid var(--rail-soft); }
+  .hit:last-child { border-bottom: 0; }
+  .hit-head { display: flex; align-items: baseline; gap: .55rem; flex-wrap: wrap; font-family: var(--mono); font-size: var(--step--1); }
+  .score { color: var(--brand-ink); font-weight: 700; }
+  .kind { color: var(--ink-3); border: 1px solid var(--rail); border-radius: 999px; padding: 0 .45rem; font-size: .68rem; }
+  .hit-text { margin: .45rem 0 .6rem; font-size: .92rem; line-height: 1.45; }
+  .sigs { display: grid; grid-template-columns: repeat(2, 1fr); gap: .55rem .9rem; }
+  @media (min-width: 560px) { .sigs { grid-template-columns: repeat(4, 1fr); } }
+  .sig-name { font-family: var(--mono); font-size: .64rem; color: var(--ink-3); letter-spacing: .04em; display: flex; justify-content: space-between; gap: .3rem; }
+  .track { height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--ink) 10%, transparent); margin-top: .22rem; overflow: hidden; }
+  .fill { height: 100%; border-radius: 3px; transform-origin: left; animation: grow .9s cubic-bezier(.2,.7,.3,1) both; }
+  @keyframes grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  .v { background: var(--sig-vector); } .l { background: var(--sig-lexical); }
+  .g { background: var(--sig-graph); } .r { background: var(--sig-recency); }
+  .card-note { padding: .6rem .9rem; border-top: 1px solid var(--rail); font-family: var(--mono); font-size: var(--step--1); color: var(--ink-3); }
+  .card-note b { color: var(--sig-graph); font-weight: 600; }
+
+  /* the 27% wall ----------------------------------------------------- */
+  .wall { display: grid; gap: 2.4rem; }
+  @media (min-width: 900px) { .wall { grid-template-columns: 1fr 1.15fr; align-items: start; gap: 3.5rem; } }
+  .bars { display: flex; flex-direction: column; gap: 1rem; }
+  .bar-row { display: grid; grid-template-columns: 1fr; gap: .3rem; }
+  .bar-label { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; font-family: var(--mono); font-size: var(--step--1); color: var(--ink-2); }
+  .bar-label b { font-size: 1.05rem; color: var(--ink); font-weight: 700; }
+  .bar-track { height: 30px; background: var(--ground-2); border: 1px solid var(--rail-soft); border-radius: 5px; overflow: hidden; }
+  .bar-fill { height: 100%; background: color-mix(in srgb, var(--sig-vector) 55%, var(--ground)); border-right: 2px solid var(--sig-vector); }
+  .bar-fill.win { background: color-mix(in srgb, var(--brand) 40%, var(--ground)); border-right-color: var(--brand); }
+  .bar-row.muted .bar-label { color: var(--ink-3); }
+
+  /* stats ------------------------------------------------------------ */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .stat { padding: 1.6rem clamp(1.1rem, 3vw, 2rem); border-top: 1px solid var(--rail-soft); border-right: 1px solid var(--rail-soft); }
+  .stat-v { font-size: clamp(2rem, 1.2rem + 2.6vw, 3.2rem); font-weight: 800; letter-spacing: -.045em; line-height: 1; }
+  .stat-v small { font-size: .38em; font-weight: 600; letter-spacing: -.01em; color: var(--ink-3); margin-left: .25em; }
+  .stat-l { font-family: var(--mono); font-size: var(--step--1); color: var(--ink-3); margin-top: .6rem; line-height: 1.45; }
+
+  /* signal grid ------------------------------------------------------ */
+  .grid-4 { display: grid; gap: 1px; background: var(--rail-soft); border: 1px solid var(--rail-soft); border-radius: 10px; overflow: hidden; }
+  @media (min-width: 760px) { .grid-4 { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1060px) { .grid-4 { grid-template-columns: repeat(4, 1fr); } }
+  .cell { background: var(--ground); padding: 1.5rem 1.3rem; display: flex; flex-direction: column; gap: .55rem; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .cell-h { display: flex; align-items: center; gap: .5rem; font-family: var(--mono); font-size: var(--step--1); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+  .cell p { color: var(--ink-2); font-size: .93rem; }
+
+  /* table ------------------------------------------------------------ */
+  .scroller { overflow-x: auto; border: 1px solid var(--rail-soft); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: .9rem; }
+  th, td { text-align: left; padding: .72rem .9rem; border-bottom: 1px solid var(--rail-soft); }
+  thead th { font-family: var(--mono); font-size: var(--step--1); font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); background: var(--ground-2); }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .me td { background: color-mix(in srgb, var(--brand) 9%, transparent); }
+  .me td:first-child { font-weight: 700; }
+  .yes { color: var(--sig-graph); font-weight: 700; }
+  .partial { color: var(--sig-recency); }
+  .no { color: var(--ink-3); }
+
+  /* code ------------------------------------------------------------- */
+  .tabs { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .9rem; }
+  .tab {
+    font-family: var(--mono); font-size: var(--step--1); padding: .35rem .75rem; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--rail); background: transparent; color: var(--ink-2);
+  }
+  .tab[aria-selected="true"] { background: var(--brand); border-color: var(--brand); color: #180f07; font-weight: 600; }
+  pre { margin: 0; padding: 1.1rem 1.2rem; overflow-x: auto; font-family: var(--mono); font-size: .84rem; line-height: 1.7; }
+  pre .c { color: var(--ink-3); } pre .k { color: var(--sig-vector); } pre .s { color: var(--sig-graph); } pre .f { color: var(--brand-ink); }
+  [hidden] { display: none !important; }
+
+  /* footer ----------------------------------------------------------- */
+  footer { color: var(--ink-3); font-family: var(--mono); font-size: var(--step--1); }
+  .foot { display: flex; flex-wrap: wrap; gap: 1rem 2rem; align-items: center; justify-content: space-between; }
+  .foot a { text-decoration: none; color: var(--ink-2); }
+  .foot a:hover { color: var(--brand); }
+  .foot-links { display: flex; flex-wrap: wrap; gap: 1.2rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <a class="wordmark" href="#top">
+      <svg width="26" height="26" viewBox="0 0 48 48" aria-hidden="true">
+        <path d="M24 4 42 14v8L24 12 6 22v-8L24 4z" fill="#f97316"/>
+        <rect x="12" y="22" width="24" height="7" rx="2" fill="currentColor" opacity=".8"/>
+        <rect x="12" y="31" width="24" height="6" rx="2" fill="#f97316" opacity=".8"/>
+        <rect x="12" y="39" width="24" height="5" rx="2" fill="currentColor" opacity=".35"/>
+      </svg>
+      memrust
+    </a>
+    <span class="chip">v0.5.4</span>
+    <nav>
+      <a href="#why">Why</a>
+      <a href="#signals">Signals</a>
+      <a href="#benchmarks">Benchmarks</a>
+      <a href="#install">Install</a>
+    </nav>
+    <button class="btn icon-btn" id="theme" aria-label="Switch between light and dark theme" title="Switch theme">
+      <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"/></svg>
+      <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+    <a class="btn btn-brand" href="https://github.com/AIAnytime/memrust">GitHub ↗</a>
+  </div>
+</header>
+
+<main class="frame" id="top">
+
+  <!-- HERO -->
+  <section class="pad hero">
+    <div>
+      <p class="eyebrow">Memory infrastructure for AI agents</p>
+      <h1>Your agent doesn't need a vector database.<br>It needs <span class="accent">memory</span>.</h1>
+      <p class="lede" style="margin-top:1.6rem">
+        A memory engine in Rust that answers <em>“what do I know about this?”</em> — not
+        “which vectors are nearest?”
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-brand" href="#install">Install →</a>
+        <a class="btn" href="https://github.com/AIAnytime/memrust">Read the source</a>
+      </div>
+      <div class="facts">
+        <span>Rust</span><span>Apache-2.0</span><span>single binary</span><span>MCP built in</span><span>Python &amp; TypeScript SDKs</span>
+      </div>
+    </div>
+
+    <div class="card" aria-label="An actual recall result from memrust">
+      <div class="card-top">
+        <span>memory.recall("what is connected to Project Phoenix")</span>
+        <span>relational</span>
+      </div>
+
+      <div class="hit">
+        <div class="hit-head"><span class="score tnum">0.0386</span><span class="kind">semantic</span><span style="color:var(--ink-3)">1m ago</span></div>
+        <p class="hit-text">Dana Whitfield leads Project Phoenix</p>
+        <div class="sigs">
+          <div><div class="sig-name"><span>vector</span><span class="tnum">.0164</span></div><div class="track"><div class="fill v" style="width:100%"></div></div></div>
+          <div><div class="sig-name"><span>lexical</span><span class="tnum">.0164</span></div><div class="track"><div class="fill l" style="width:100%;animation-delay:.06s"></div></div></div>
+          <div><div class="sig-name"><span>graph</span><span class="tnum">.0164</span></div><div class="track"><div class="fill g" style="width:100%;animation-delay:.12s"></div></div></div>
+          <div><div class="sig-name"><span>recency</span><span class="tnum">1.00</span></div><div class="track"><div class="fill r" style="width:100%;animation-delay:.18s"></div></div></div>
+        </div>
+      </div>
+
+      <div class="hit">
+        <div class="hit-head"><span class="score tnum">0.0309</span><span class="kind">semantic</span><span style="color:var(--ink-3)">1m ago</span></div>
+        <p class="hit-text">the Billing Service rate limits at 100 requests per second</p>
+        <div class="sigs">
+          <div><div class="sig-name"><span>vector</span><span class="tnum">.0152</span></div><div class="track"><div class="fill v" style="width:93%;animation-delay:.24s"></div></div></div>
+          <div><div class="sig-name"><span>lexical</span><span class="tnum">.0000</span></div><div class="track"><div class="fill l" style="width:0%"></div></div></div>
+          <div><div class="sig-name"><span>graph</span><span class="tnum">.0159</span></div><div class="track"><div class="fill g" style="width:97%;animation-delay:.3s"></div></div></div>
+          <div><div class="sig-name"><span>recency</span><span class="tnum">1.00</span></div><div class="track"><div class="fill r" style="width:100%;animation-delay:.36s"></div></div></div>
+        </div>
+      </div>
+
+      <p class="card-note">
+        That second memory never mentions Phoenix. It surfaced on <b>graph</b> — one hop
+        through a shared entity — with lexical at zero.
+      </p>
+    </div>
+  </section>
+
+  <!-- THE 27% WALL -->
+  <section class="seam pad wall" id="why">
+    <div>
+      <p class="eyebrow">The ceiling nobody talks about</p>
+      <h2>Ask for <span class="accent">INC-90312</span> and vector search shrugs.</h2>
+      <p class="prose" style="margin-top:1.4rem">
+        Agents ask for exact things constantly: error codes, ticket IDs, commit SHAs,
+        customer names, function names. Embeddings can't separate
+        <span class="mono">INC-90312</span> from <span class="mono">INC-90319</span> —
+        near-identical strings make near-identical vectors.
+      </p>
+      <p class="prose" style="margin-top:1rem">
+        The telling part: <strong>exact brute-force vector search scores the same 27%.</strong>
+        This isn't an index-quality problem a faster ANN fixes. It's the ceiling of the
+        embedding itself, and every pure vector store inherits it.
+      </p>
+      <p class="prose" style="margin-top:1rem">
+        memrust runs BM25 and an entity graph over the same memories and fuses the
+        rankings. Same embeddings, same corpus — different architecture.
+      </p>
+    </div>
+
+    <div>
+      <div class="bars">
+        <div class="bar-row muted">
+          <div class="bar-label"><span>Exact vector search · the ceiling</span><b class="tnum">27%</b></div>
+          <div class="bar-track"><div class="bar-fill" style="width:27%"></div></div>
+        </div>
+        <div class="bar-row muted">
+          <div class="bar-label"><span>FAISS</span><b class="tnum">27%</b></div>
+          <div class="bar-track"><div class="bar-fill" style="width:27%"></div></div>
+        </div>
+        <div class="bar-row muted">
+          <div class="bar-label"><span>Chroma</span><b class="tnum">27%</b></div>
+          <div class="bar-track"><div class="bar-fill" style="width:27%"></div></div>
+        </div>
+        <div class="bar-row muted">
+          <div class="bar-label"><span>Qdrant</span><b class="tnum">27%</b></div>
+          <div class="bar-track"><div class="bar-fill" style="width:27%"></div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label"><span>memrust · hybrid</span><b class="tnum">75%</b></div>
+          <div class="bar-track"><div class="bar-fill win" style="width:75%"></div></div>
+        </div>
+      </div>
+      <p class="mono" style="margin-top:1rem;font-size:var(--step--1);color:var(--ink-3);line-height:1.6">
+        hit@5 on 60 identifier lookups · 500 memories · identical all-MiniLM-L6-v2
+        embeddings for every engine · benches/agent_recall.py
+      </p>
+    </div>
+  </section>
+
+  <!-- SIGNALS -->
+  <section class="seam pad" id="signals">
+    <p class="eyebrow">Four signals, one call</p>
+    <h2 style="max-width:20ch">Retrieval that shows its <span class="accent">work</span>.</h2>
+    <p class="prose" style="margin-top:1.3rem;margin-bottom:2.6rem">
+      Every hit comes back with its score broken out by signal. An agent can tell a strong
+      semantic match from a lucky keyword hit — and so can you, when something surfaces
+      that shouldn't have.
+    </p>
+    <div class="grid-4">
+      <div class="cell">
+        <div class="cell-h"><span class="dot" style="background:var(--sig-vector)"></span>vector</div>
+        <h3>Meaning</h3>
+        <p>An in-crate HNSW index over your embeddings. Bring your own vectors, or let the engine call OpenAI, Gemini, or a local sentence-transformers server.</p>
+      </div>
+      <div class="cell">
+        <div class="cell-h"><span class="dot" style="background:var(--sig-lexical)"></span>lexical</div>
+        <h3>Exact terms</h3>
+        <p>A BM25 inverted index for the identifiers, error codes and names that embeddings blur together.</p>
+      </div>
+      <div class="cell">
+        <div class="cell-h"><span class="dot" style="background:var(--sig-graph)"></span>graph</div>
+        <h3>Relationships</h3>
+        <p>Entities extracted at ingest, linked by co-occurrence. Finds what's <em>connected</em> to a thing, not just what resembles it. No external graph database.</p>
+      </div>
+      <div class="cell">
+        <div class="cell-h"><span class="dot" style="background:var(--sig-recency)"></span>recency</div>
+        <h3>Time</h3>
+        <p>Exponential decay as a first-class ranking term, because "what did we decide recently" is not a similarity question.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <section class="seam">
+    <div class="pad" style="padding-bottom:0">
+      <p class="eyebrow">Measured, not claimed</p>
+      <h2 style="max-width:24ch">Every number here comes from a script in the repo.</h2>
+    </div>
+    <div class="stats" style="margin-top:2.6rem">
+      <div class="stat">
+        <div class="stat-v tnum">0.64<small>ms</small></div>
+        <div class="stat-l">recall p50 at 20k vectors — second-fastest server measured, behind pgvector</div>
+      </div>
+      <div class="stat">
+        <div class="stat-v tnum">1.000</div>
+        <div class="stat-l">recall@10 against exact brute-force ground truth</div>
+      </div>
+      <div class="stat">
+        <div class="stat-v tnum">4<small>×</small></div>
+        <div class="stat-l">less vector memory with SQ8, applied automatically at 1024+ dims where it also runs faster</div>
+      </div>
+      <div class="stat">
+        <div class="stat-v tnum">1,000</div>
+        <div class="stat-l">acknowledged writes, 1,000 recovered after <span class="mono">kill -9</span> mid-checkpoint</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPARISON -->
+  <section class="seam pad" id="benchmarks">
+    <p class="eyebrow">What you'd otherwise assemble</p>
+    <h2 style="max-width:26ch">One engine instead of <span class="accent">five systems</span>.</h2>
+    <p class="prose" style="margin-top:1.3rem;margin-bottom:2.2rem">
+      The usual answer to agent memory is a vector DB, a keyword index, fusion code, a graph
+      store, a scheduler for expiry and summarization, access control, and an MCP shim.
+      That's the stack memrust replaces.
+    </p>
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>Capability</th><th>memrust</th><th>Qdrant</th><th>Chroma</th><th>FAISS</th><th>pgvector</th><th>LanceDB</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Vector search</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>Keyword fused into one query</td><td class="yes">✓</td><td class="partial">setup</td><td class="no">—</td><td class="no">—</td><td class="partial">DIY</td><td class="yes">✓</td></tr>
+          <tr><td>Entity graph as a signal</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="partial">DIY</td><td class="no">—</td></tr>
+          <tr><td>Per-signal score explanation</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+          <tr><td>Agent API + memory kinds</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+          <tr><td>TTLs &amp; automatic consolidation</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="partial">cron</td><td class="no">—</td></tr>
+          <tr><td>Multi-agent private/shared memory</td><td class="yes">✓</td><td class="partial">filters</td><td class="partial">filters</td><td class="no">—</td><td class="partial">policies</td><td class="partial">filters</td></tr>
+          <tr><td>MCP server for agent runtimes</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+          <tr><td>Built-in dashboard</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="mono" style="margin-top:1rem;font-size:var(--step--1);color:var(--ink-3)">
+      ✓ built in · setup/DIY/cron/filters/policies = possible, you build it · — not available
+    </p>
+
+    <h3 style="margin-top:3.2rem">Vector search, head to head</h3>
+    <p class="prose" style="margin-top:.8rem;margin-bottom:1.4rem">
+      20,000 vectors, 384 dims, identical HNSW settings, recall against exact ground truth.
+      memrust is not the fastest thing here and doesn't claim to be — ingest is an order of
+      magnitude behind, because it fsyncs every write where the others buffer.
+    </p>
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Engine</th><th>Ingest/s</th><th>Query p50</th><th>recall@10</th></tr></thead>
+        <tbody>
+          <tr><td>FAISS <span class="mono" style="color:var(--ink-3)">in-process</span></td><td class="num">35,625</td><td class="num">0.06 ms</td><td class="num">1.000</td></tr>
+          <tr><td>LanceDB <span class="mono" style="color:var(--ink-3)">embedded</span></td><td class="num">99,238</td><td class="num">8.60 ms</td><td class="num">1.000</td></tr>
+          <tr><td>Chroma <span class="mono" style="color:var(--ink-3)">in-process</span></td><td class="num">5,907</td><td class="num">0.49 ms</td><td class="num">1.000</td></tr>
+          <tr><td>pgvector <span class="mono" style="color:var(--ink-3)">server</span></td><td class="num">5,017</td><td class="num">0.46 ms</td><td class="num">1.000</td></tr>
+          <tr><td>Qdrant <span class="mono" style="color:var(--ink-3)">server</span></td><td class="num">2,475</td><td class="num">2.08 ms</td><td class="num">1.000</td></tr>
+          <tr class="me"><td>memrust <span class="mono" style="color:var(--ink-3)">server</span></td><td class="num">988</td><td class="num">0.64 ms</td><td class="num">1.000</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- INSTALL -->
+  <section class="seam pad" id="install">
+    <p class="eyebrow">Two minutes to first recall</p>
+    <h2 style="max-width:22ch">Install it, <span class="accent">remember</span> something, ask.</h2>
+
+    <div style="margin-top:2.4rem">
+      <div class="tabs" role="tablist" aria-label="Choose a language">
+        <button class="tab" role="tab" aria-selected="true" aria-controls="p-sh" id="t-sh">shell</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="p-py" id="t-py">python</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="p-ts" id="t-ts">typescript</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="p-rs" id="t-rs">rust</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="p-mcp" id="t-mcp">mcp</button>
+      </div>
+
+      <div class="card">
+        <div role="tabpanel" id="p-sh" aria-labelledby="t-sh"><pre><span class="c"># the engine — dashboard and HTTP API on :7700</span>
+cargo install memrust
+memrust serve
+
+<span class="c"># or with Docker</span>
+docker run -p 7700:7700 -v memrust-data:/data memrust</pre></div>
+
+        <div role="tabpanel" id="p-py" aria-labelledby="t-py" hidden><pre><span class="c"># pip install memrust</span>
+<span class="k">from</span> memrust <span class="k">import</span> MemrustClient
+
+memory = <span class="f">MemrustClient</span>(<span class="s">"http://127.0.0.1:7700"</span>, agent_id=<span class="s">"planner"</span>)
+memory.<span class="f">remember</span>(<span class="s">"Deploy 47 failed with error E1234"</span>, kind=<span class="s">"episodic"</span>)
+
+<span class="k">for</span> hit <span class="k">in</span> memory.<span class="f">recall</span>(<span class="s">"what went wrong with the deploy?"</span>):
+    <span class="f">print</span>(hit[<span class="s">"score"</span>], hit[<span class="s">"record"</span>][<span class="s">"text"</span>], hit[<span class="s">"signals"</span>])</pre></div>
+
+        <div role="tabpanel" id="p-ts" aria-labelledby="t-ts" hidden><pre><span class="c">// npm install memrust-client</span>
+<span class="k">import</span> { MemrustClient } <span class="k">from</span> <span class="s">"memrust-client"</span>;
+
+<span class="k">const</span> memory = <span class="k">new</span> <span class="f">MemrustClient</span>(<span class="s">"http://127.0.0.1:7700"</span>, { agentId: <span class="s">"planner"</span> });
+<span class="k">await</span> memory.<span class="f">remember</span>(<span class="s">"the Billing Service rate limits at 100 rps"</span>);
+
+<span class="k">const</span> hits = <span class="k">await</span> memory.<span class="f">recall</span>(<span class="s">"Project Phoenix"</span>, { strategy: <span class="s">"relational"</span> });</pre></div>
+
+        <div role="tabpanel" id="p-rs" aria-labelledby="t-rs" hidden><pre><span class="c">// cargo add memrust</span>
+<span class="k">use</span> memrust::{MemoryEngine, RememberRequest, RecallRequest};
+
+<span class="k">let mut</span> memory = MemoryEngine::<span class="f">open</span>(<span class="s">"./data"</span>.as_ref())?;
+memory.<span class="f">remember</span>(RememberRequest {
+    text: <span class="s">"user prefers concise answers"</span>.into(),
+    ..Default::<span class="f">default</span>()
+})?;
+
+<span class="k">let</span> hits = memory.<span class="f">recall</span>(&RecallRequest {
+    query: <span class="s">"what does the user prefer?"</span>.into(),
+    ..Default::<span class="f">default</span>()
+});</pre></div>
+
+        <div role="tabpanel" id="p-mcp" aria-labelledby="t-mcp" hidden><pre><span class="c"># give Claude Code persistent memory</span>
+claude mcp add memory -- memrust mcp --data-dir ~/.memrust --agent-id planner
+
+<span class="c"># the agent gets three tools:</span>
+<span class="c">#   memory_remember · memory_recall · memory_forget</span>
+<span class="c"># recall returns the per-signal breakdown, so the agent can</span>
+<span class="c"># reason about why something surfaced.</span></pre></div>
+      </div>
+    </div>
+
+    <div class="facts" style="margin-top:1.6rem">
+      <span>crates.io</span><span>PyPI</span><span>npm</span><span>prebuilt Linux &amp; macOS binaries</span>
+    </div>
+  </section>
+
+  <!-- HONEST CLOSE -->
+  <section class="seam pad">
+    <p class="eyebrow">When not to use it</p>
+    <h2 style="max-width:24ch">memrust is v0.5 and single-node.</h2>
+    <p class="prose" style="margin-top:1.3rem">
+      Reach for FAISS if you need maximum ANN throughput on a static corpus. Stay with
+      pgvector if you're already deep in Postgres and only need embeddings. Use Qdrant or
+      Milvus if you need billion-scale distributed sharding today. A concurrent writer still
+      costs about half of read throughput, because HNSW insertion holds the exclusive lock.
+    </p>
+    <p class="prose" style="margin-top:1rem">
+      What memrust does that they don't is answer the question an agent actually asks —
+      across meaning, exact terms, relationships and time — and tell you why it answered
+      that way.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-brand" href="https://github.com/AIAnytime/memrust">Star on GitHub ↗</a>
+      <a class="btn" href="https://github.com/AIAnytime/memrust/tree/main/notebooks">Run the notebooks</a>
+    </div>
+  </section>
+
+  <footer class="seam pad">
+    <div class="foot">
+      <span>memrust v0.5.4 · Apache-2.0 · built by <a href="https://github.com/AIAnytime">AI Anytime</a></span>
+      <span class="foot-links">
+        <a href="https://github.com/AIAnytime/memrust">GitHub</a>
+        <a href="https://crates.io/crates/memrust">crates.io</a>
+        <a href="https://pypi.org/project/memrust/">PyPI</a>
+        <a href="https://www.npmjs.com/package/memrust-client">npm</a>
+        <a href="https://github.com/AIAnytime/memrust/tree/main/benches">Benchmarks</a>
+      </span>
+    </div>
+  </footer>
+</main>
+
+<script>
+  // Theme: follow the OS, remember an explicit choice.
+  var root = document.documentElement;
+  document.getElementById("theme").addEventListener("click", function () {
+    var set = root.getAttribute("data-theme");
+    var dark = set ? set === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    var next = dark ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("memrust-site-theme", next); } catch (e) {}
+  });
+
+  // Language tabs.
+  var tabs = Array.prototype.slice.call(document.querySelectorAll(".tab"));
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      tabs.forEach(function (t) {
+        var on = t === tab;
+        t.setAttribute("aria-selected", String(on));
+        document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+      });
+    });
+  });
+</script>
+</body>
+</html>

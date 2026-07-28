@@ -414,6 +414,16 @@ corpus (FAISS), you are already deep in Postgres and only need embeddings
 Milvus). memrust is young — v0.5, single-node, one writer — and it is honest
 about that.
 
+## Website
+
+The landing page lives in [`docs/`](docs/) as a single self-contained HTML file
+— no build step, no dependencies. Enable GitHub Pages on the `main` branch with
+the `/docs` folder to publish it.
+
+```bash
+python3 -m http.server -d docs 8080   # preview locally
+```
+
 ## Project layout
 
 ```
