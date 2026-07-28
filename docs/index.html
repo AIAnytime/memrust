@@ -157,6 +157,27 @@
   .card-note { padding: .6rem .9rem; border-top: 1px solid var(--rail); font-family: var(--mono); font-size: var(--step--1); color: var(--ink-3); }
   .card-note b { color: var(--sig-graph); font-weight: 600; }
 
+  /* the stack ------------------------------------------------------- */
+  .layer-wrap { display: grid; gap: 2.6rem; }
+  @media (min-width: 940px) { .layer-wrap { grid-template-columns: 1.05fr .95fr; align-items: center; gap: 4rem; } }
+  .stack { display: flex; flex-direction: column; gap: .5rem; }
+  .tier {
+    position: relative; border: 1px solid var(--rail-soft); border-radius: 9px;
+    background: var(--ground-2); padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: .2rem;
+  }
+  .tier-l { font-weight: 700; font-size: .98rem; }
+  .tier-v { font-family: var(--mono); font-size: var(--step--1); color: var(--ink-3); }
+  .tier-me {
+    border-color: var(--brand); background: color-mix(in srgb, var(--brand) 11%, var(--ground-2));
+    padding-block: 1.35rem;
+  }
+  .tier-me .tier-l { color: var(--brand); font-size: 1.15rem; }
+  .tier-badge {
+    position: absolute; top: 50%; right: 1.1rem; transform: translateY(-50%);
+    font-family: var(--mono); font-size: var(--step--1); font-weight: 600;
+    background: var(--brand); color: #180f07; border-radius: 999px; padding: .2rem .6rem;
+  }
+
   /* the 27% wall ----------------------------------------------------- */
   .wall { display: grid; gap: 2.4rem; }
   @media (min-width: 900px) { .wall { grid-template-columns: 1fr 1.15fr; align-items: start; gap: 3.5rem; } }
@@ -209,6 +230,26 @@
   pre .c { color: var(--ink-3); } pre .k { color: var(--sig-vector); } pre .s { color: var(--sig-graph); } pre .f { color: var(--brand-ink); }
   [hidden] { display: none !important; }
 
+  /* roadmap + contact ------------------------------------------------- */
+  .road { display: grid; gap: 1px; background: var(--rail-soft); border: 1px solid var(--rail-soft); border-radius: 10px; overflow: hidden; margin-top: 2.4rem; }
+  @media (min-width: 820px) { .road { grid-template-columns: repeat(3, 1fr); } }
+  .road-item { background: var(--ground); padding: 1.4rem 1.3rem; display: flex; flex-direction: column; gap: .5rem; }
+  .road-t { font-family: var(--mono); font-size: var(--step--1); letter-spacing: .1em; text-transform: uppercase; color: var(--brand-ink); }
+  .road-item p { color: var(--ink-2); font-size: .93rem; }
+
+  .contact-wrap { display: grid; gap: 2.6rem; }
+  @media (min-width: 940px) { .contact-wrap { grid-template-columns: 1fr 1fr; gap: 4rem; align-items: center; } }
+  .contact-cards { display: flex; flex-direction: column; gap: .6rem; }
+  .contact-card {
+    display: flex; flex-direction: column; gap: .15rem; text-decoration: none;
+    border: 1px solid var(--rail-soft); border-radius: 10px; padding: 1.1rem 1.2rem;
+    background: var(--ground-2); transition: border-color .15s, transform .15s;
+  }
+  .contact-card:hover { border-color: var(--brand); transform: translateX(3px); }
+  .cc-k { font-family: var(--mono); font-size: var(--step--1); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+  .cc-v { font-weight: 700; font-size: 1.02rem; }
+  .contact-card p { color: var(--ink-2); font-size: .89rem; margin-top: .3rem; }
+
   /* footer ----------------------------------------------------------- */
   footer { color: var(--ink-3); font-family: var(--mono); font-size: var(--step--1); }
   .foot { display: flex; flex-wrap: wrap; gap: 1rem 2rem; align-items: center; justify-content: space-between; }
@@ -230,12 +271,12 @@
       </svg>
       memrust
     </a>
-    <span class="chip">v0.5.4</span>
     <nav>
-      <a href="#why">Why</a>
-      <a href="#signals">Signals</a>
+      <a href="#layer">The layer</a>
+      <a href="#why">Why hybrid</a>
       <a href="#benchmarks">Benchmarks</a>
       <a href="#install">Install</a>
+      <a href="#contact">Contact</a>
     </nav>
     <button class="btn icon-btn" id="theme" aria-label="Switch between light and dark theme" title="Switch theme">
       <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"/></svg>
@@ -297,6 +338,48 @@
         That second memory never mentions Phoenix. It surfaced on <b>graph</b> — one hop
         through a shared entity — with lexical at zero.
       </p>
+    </div>
+  </section>
+
+
+  <!-- THE MISSING LAYER -->
+  <section class="seam pad" id="layer">
+    <div class="layer-wrap">
+      <div>
+        <p class="eyebrow">The missing layer</p>
+        <h2>Every other layer of the agent stack <span class="accent">already exists</span>.</h2>
+        <p class="prose" style="margin-top:1.4rem">
+          Models, orchestration, tools, evals — each has infrastructure built for it.
+          Memory got a vector index and a shrug. So every team building agents writes the
+          same layer by hand: a vector store, a keyword index, fusion logic, a graph for
+          relationships, a scheduler for expiry and summarization, access control between
+          agents, and a protocol shim to expose it all.
+        </p>
+        <p class="prose" style="margin-top:1rem">
+          memrust is that layer as one binary. Not a database an agent queries —
+          <strong>memory an agent has</strong>.
+        </p>
+      </div>
+
+      <div class="stack" aria-label="Where memrust sits in the agent stack">
+        <div class="tier">
+          <span class="tier-l">Agent runtime</span>
+          <span class="tier-v">Claude Code · LangGraph · OpenAI SDK · CrewAI</span>
+        </div>
+        <div class="tier tier-gap">
+          <span class="tier-l">Tools &amp; orchestration</span>
+          <span class="tier-v">MCP · function calling</span>
+        </div>
+        <div class="tier tier-me">
+          <span class="tier-l">Memory</span>
+          <span class="tier-v">remember · recall · forget</span>
+          <span class="tier-badge">memrust</span>
+        </div>
+        <div class="tier">
+          <span class="tier-l">Storage &amp; compute</span>
+          <span class="tier-v">disk · embeddings · your infrastructure</span>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -445,8 +528,10 @@
     <h3 style="margin-top:3.2rem">Vector search, head to head</h3>
     <p class="prose" style="margin-top:.8rem;margin-bottom:1.4rem">
       20,000 vectors, 384 dims, identical HNSW settings, recall against exact ground truth.
-      memrust is not the fastest thing here and doesn't claim to be — ingest is an order of
-      magnitude behind, because it fsyncs every write where the others buffer.
+      Query latency is second-best among the servers and recall ties the field. Ingest is
+      slower on purpose: memrust fsyncs every write, where the others buffer. For a memory
+      layer that's the right trade — an agent quietly losing what it was told is worse than
+      writing a little slower.
     </p>
     <div class="scroller">
       <table>
@@ -531,36 +616,69 @@ claude mcp add memory -- memrust mcp --data-dir ~/.memrust --agent-id planner
     </div>
   </section>
 
-  <!-- HONEST CLOSE -->
+  <!-- WHERE IT'S GOING -->
   <section class="seam pad">
-    <p class="eyebrow">When not to use it</p>
-    <h2 style="max-width:24ch">memrust is v0.5 and single-node.</h2>
+    <p class="eyebrow">Where this is going</p>
+    <h2 style="max-width:24ch">The engine is open. The <span class="accent">hard part</span> is shared memory.</h2>
     <p class="prose" style="margin-top:1.3rem">
-      Reach for FAISS if you need maximum ANN throughput on a static corpus. Stay with
-      pgvector if you're already deep in Postgres and only need embeddings. Use Qdrant or
-      Milvus if you need billion-scale distributed sharding today. A concurrent writer still
-      costs about half of read throughput, because HNSW insertion holds the exclusive lock.
+      memrust is Apache-2.0 and will stay that way — an engine you can read, fork and run
+      on your own hardware. What comes next is the part single-node can't solve: fleets of
+      agents sharing memory across machines, with isolation, quotas and replication. Open
+      core, hosted control plane.
     </p>
-    <p class="prose" style="margin-top:1rem">
-      What memrust does that they don't is answer the question an agent actually asks —
-      across meaning, exact terms, relationships and time — and tell you why it answered
-      that way.
-    </p>
-    <div class="cta-row">
-      <a class="btn btn-brand" href="https://github.com/AIAnytime/memrust">Star on GitHub ↗</a>
-      <a class="btn" href="https://github.com/AIAnytime/memrust/tree/main/notebooks">Run the notebooks</a>
+    <div class="road">
+      <div class="road-item"><span class="road-t">Shipping now</span><p>Hybrid retrieval, memory lifecycle, multi-agent visibility, MCP, dashboard, SDKs.</p></div>
+      <div class="road-item"><span class="road-t">Next</span><p>Streaming replication, per-namespace quotas, LLM entity extraction, hierarchical summarization.</p></div>
+      <div class="road-item"><span class="road-t">Then</span><p>Hosted memory with per-agent isolation — the engine stays open, the control plane is the product.</p></div>
+    </div>
+  </section>
+
+  <!-- CONTACT -->
+  <section class="seam pad" id="contact">
+    <div class="contact-wrap">
+      <div>
+        <p class="eyebrow">Get in touch</p>
+        <h2>Building something that needs to <span class="accent">remember</span>?</h2>
+        <p class="prose" style="margin-top:1.3rem">
+          Whether you're wiring memrust into an agent today, hitting an edge we haven't,
+          or looking at the memory layer as a market — the fastest way to reach us is
+          directly.
+        </p>
+        <div class="cta-row">
+          <a class="btn btn-brand" href="mailto:sroy27.ai@gmail.com?subject=memrust">Email us →</a>
+          <a class="btn" href="https://github.com/AIAnytime/memrust">Star on GitHub ↗</a>
+        </div>
+      </div>
+      <div class="contact-cards">
+        <a class="contact-card" href="https://github.com/AIAnytime/memrust/issues">
+          <span class="cc-k">Bugs &amp; questions</span>
+          <span class="cc-v">GitHub Issues</span>
+          <p>Fastest for anything reproducible. Benchmarks and tests are in the repo.</p>
+        </a>
+        <a class="contact-card" href="mailto:sroy27.ai@gmail.com?subject=memrust%20in%20production">
+          <span class="cc-k">Using it in production</span>
+          <span class="cc-v">Email</span>
+          <p>Tell us the workload. Scale, latency budget and agent count shape what we build next.</p>
+        </a>
+        <a class="contact-card" href="mailto:sroy27.ai@gmail.com?subject=memrust%20—%20investment%20%26%20partnerships">
+          <span class="cc-k">Investors &amp; partners</span>
+          <span class="cc-v">Email</span>
+          <p>Happy to walk through the architecture, the benchmarks and where the hosted layer goes.</p>
+        </a>
+      </div>
     </div>
   </section>
 
   <footer class="seam pad">
     <div class="foot">
-      <span>memrust v0.5.4 · Apache-2.0 · built by <a href="https://github.com/AIAnytime">AI Anytime</a></span>
+      <span>memrust · Apache-2.0 · built by <a href="https://github.com/AIAnytime">AI Anytime</a></span>
       <span class="foot-links">
         <a href="https://github.com/AIAnytime/memrust">GitHub</a>
         <a href="https://crates.io/crates/memrust">crates.io</a>
         <a href="https://pypi.org/project/memrust/">PyPI</a>
         <a href="https://www.npmjs.com/package/memrust-client">npm</a>
         <a href="https://github.com/AIAnytime/memrust/tree/main/benches">Benchmarks</a>
+        <a href="mailto:sroy27.ai@gmail.com?subject=memrust">Contact</a>
       </span>
     </div>
   </footer>
