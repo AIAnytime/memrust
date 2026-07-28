@@ -9,6 +9,7 @@
 [![crates.io](https://img.shields.io/crates/v/memrust.svg)](https://crates.io/crates/memrust)
 [![PyPI](https://img.shields.io/pypi/v/memrust.svg)](https://pypi.org/project/memrust/)
 [![npm](https://img.shields.io/npm/v/memrust-client.svg)](https://www.npmjs.com/package/memrust-client)
+[![Docker](https://img.shields.io/docker/v/aianytime/memrust?label=docker)](https://hub.docker.com/r/aianytime/memrust)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 Not another vector database. Vector DBs answer `query(vector) -> top_k chunks`.
@@ -51,14 +52,18 @@ Pure vector search is where agent memory goes to die quietly:
 | Embeddings | Pluggable `Embedder` trait: built-in OpenAI-compatible client (OpenAI, Mistral, Voyage, and local sentence-transformers via Ollama / HF TEI / LM Studio / Infinity / vLLM), native Gemini client, BYO precomputed vectors, or the offline feature-hashing default |
 | Memory model | `episodic` / `semantic` / `working` / `reflection` / `tool_call` / `procedural`, with tags, sessions, agents, importance |
 | Lifecycle | Working-memory TTLs with durable sweeps; automatic consolidation of old episodic memories into semantic summaries (pluggable `Summarizer`: offline extractive default or OpenAI-compatible LLM); session snapshot/restore |
-| Interfaces | HTTP API (axum) + MCP server over stdio |
+| Interfaces | HTTP API (axum) + MCP server over stdio + embedded web dashboard |
+| Operations | Namespaces as isolated engines, API keys with per-namespace scopes, Prometheus `/metrics`, structured JSON logs, unauthenticated `/healthz` liveness probe, official multi-arch Docker image |
 
 ## Quickstart
 
 ```bash
 # Install the engine
-cargo install memrust        # or: docker build -t memrust .
+cargo install memrust
 memrust serve                # dashboard + HTTP API on 127.0.0.1:7700
+
+# ...or run the official image (multi-arch: amd64 + arm64, ~36 MB)
+docker run -p 7700:7700 -v memrust-data:/data aianytime/memrust
 
 # Client SDKs
 pip install memrust          # Python
@@ -158,6 +163,22 @@ log shippers; `text` (default) is human-readable and `off` disables it.
 
 `GET /healthz` is a liveness probe that is never authenticated — the detailed
 `/health` needs a key once auth is on, and a probe shouldn't hold credentials.
+
+### Docker
+
+`aianytime/memrust` is published for `linux/amd64` and `linux/arm64`, ~36 MB,
+running as a non-root user with `/data` as a volume and a `HEALTHCHECK` wired
+to `/healthz` (so a container with `--api-key` set still reports healthy).
+
+```bash
+docker run -d --name memrust -p 7700:7700 -v memrust-data:/data \
+  aianytime/memrust serve --addr 0.0.0.0:7700 --data-dir /data \
+  --api-key "$ADMIN_KEY" --log-format json
+```
+
+Anything after the image name replaces the default command, so every flag in
+this README works there. Tags: `:latest` and exact versions (`:0.6.1`) — pin
+the version in production.
 
 ### Multi-agent memory
 
@@ -451,6 +472,9 @@ paraphrase column as directional — the spread there is a couple of probes.)
 | Memory lifecycle (TTL + consolidation) | ✅ | ❌ | ❌ | ❌ | ⚙️ cron + SQL | ❌ |
 | Multi-agent private/shared visibility | ✅ | ⚙️ payload filters | ⚙️ metadata filters | ❌ | ⚙️ row policies | ⚙️ filters |
 | MCP server for agent runtimes | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Tenant isolation as separate indexes | ✅ namespaces | ⚙️ collections | ⚙️ collections | ❌ | ⚙️ schemas | ⚙️ tables |
+| API keys scoped per tenant | ✅ | ⚙️ single key / JWT | ❌ | ❌ | ✅ SQL roles | ❌ |
+| Prometheus metrics | ✅ | ✅ | ❌ | ❌ | ⚙️ exporter | ❌ |
 | Built-in web dashboard | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Embeddable (no server) | ✅ Rust lib | ❌ | ✅ | ✅ | ❌ | ✅ |
 
@@ -468,18 +492,8 @@ than *"which vectors are nearest?"*
 **Do not use memrust if** you need maximum ANN throughput on a large static
 corpus (FAISS), you are already deep in Postgres and only need embeddings
 (pgvector), or you need billion-scale distributed sharding today (Qdrant,
-Milvus). memrust is young — v0.5, single-node, one writer — and it is honest
-about that.
-
-## Website
-
-The landing page lives in [`docs/`](docs/) as a single self-contained HTML file
-— no build step, no dependencies. Enable GitHub Pages on the `main` branch with
-the `/docs` folder to publish it.
-
-```bash
-python3 -m http.server -d docs 8080   # preview locally
-```
+Milvus). memrust is young — single-node, one writer — and it is honest about
+that.
 
 ## Project layout
 
@@ -493,10 +507,16 @@ src/
   summarize.rs     Summarizer trait (extractive + LLM)
   rerank.rs        Reranker trait (LLM)
   store.rs         WAL + checkpoint persistence
-  server/http.rs   HTTP API        server/mcp.rs   MCP server
+  server/http.rs      HTTP API + embedded dashboard
+  server/tenancy.rs   namespace registry, API keys, scopes
+  server/metrics.rs   Prometheus exposition + request logging
+  server/mcp.rs       MCP server over stdio
 sdks/
   python/          zero-dependency Python client + E2E test
   typescript/      zero-dependency TypeScript client + E2E test
+benches/           cross-engine comparison scripts (see benches/README.md)
+notebooks/         three runnable Colab notebooks
+docs/              landing page (self-contained HTML, served by GitHub Pages)
 ```
 
 ## Development
@@ -505,10 +525,11 @@ sdks/
 cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 ```
 
-CI (GitHub Actions) runs exactly that, plus both SDK E2E suites against a
-built server and a Docker image build. Tags matching `v*` trigger the release
-workflow: binaries for Linux/macOS, crates.io, PyPI and npm publishes (with
-the corresponding repository secrets configured).
+49 tests cover the engine, lifecycle, scale/recovery, graph recall, multi-agent
+visibility and tenancy. CI (GitHub Actions) runs the command above plus both
+SDK E2E suites against a built server and a Docker image build. Tags matching
+`v*` trigger the release workflow: binaries for Linux/macOS, crates.io, PyPI
+and npm publishes (with the corresponding repository secrets configured).
 
 ## Roadmap to a product
 
@@ -526,9 +547,18 @@ the corresponding repository secrets configured).
   extraction, hierarchical (RAPTOR-style) summarization.
 - **v0.5 — multi-agent + SDKs:** ✅ private/shared visibility with per-agent
   recall scoping enforced in the pre-filter, MCP `--agent-id` identity
-  stamping, zero-dependency Python and TypeScript SDKs. Still open: authn
-  (API keys), per-namespace collections.
-- **Cloud:** hosted memory with per-agent isolation — the open-core business:
+  stamping, zero-dependency Python and TypeScript SDKs, per-query `ef_search`,
+  two-phase writes so recalls run through a writer's fsync.
+- **v0.6 — production:** ✅ namespaces as fully isolated engines with
+  backward-compatible adoption of pre-namespace data directories, API keys
+  with per-namespace scopes and constant-time comparison, Prometheus
+  `/metrics` with live per-namespace gauges, JSON request logs, unauthenticated
+  `/healthz`, official multi-arch Docker image. Still open: scheduled
+  backup/restore to object storage.
+- **Beyond:** read replicas via WAL streaming, and a concurrent or segmented
+  vector index to lift the single-writer ceiling — both demand-driven, not
+  scheduled.
+- **Cloud:** hosted memory with per-tenant isolation — the open-core business:
   the engine stays Apache-2.0, the multi-tenant control plane is the product.
 
 ## License
