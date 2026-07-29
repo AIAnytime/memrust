@@ -78,8 +78,8 @@ memrust speaks the Model Context Protocol two ways:
 - **stdio**, for local agents: `claude mcp add memory -- memrust mcp --data-dir ~/.memrust`
 - **HTTP**, hosted: `claude mcp add --transport http memrust https://<host>/mcp --header "Authorization: Bearer <key>"`
 
-Tools: `memory_remember`, `memory_recall`, `memory_forget`, `memory_entities`.
-Any MCP client connects — Claude Code, Claude Desktop, claude.ai connectors,
+Tools: `memory_remember`, `memory_recall`, `memory_forget` on both transports,
+plus `memory_entities` over HTTP. Any MCP client connects — Claude Code, Claude Desktop, claude.ai connectors,
 Cursor, Windsurf, Codex. Pointing several at one project is how agents come to
 share memory rather than each keeping a private copy.
 
@@ -94,6 +94,9 @@ results, so it cannot leak through ranking either.
 ## Links
 
 - [Landing page](https://aianytime.github.io/memrust/)
+- [Developer documentation](https://aianytime.github.io/memrust/docs/) — install,
+  quickstart in four languages, full HTTP API reference, MCP setup, LangGraph and
+  CrewAI recipes, embeddings, lifecycle, operations, troubleshooting
 - [Source, Apache-2.0](https://github.com/AIAnytime/memrust)
 - [README with full API and benchmarks](https://github.com/AIAnytime/memrust/blob/main/README.md)
 - [Benchmarks you can re-run](https://github.com/AIAnytime/memrust/tree/main/benches)

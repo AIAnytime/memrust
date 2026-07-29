@@ -240,24 +240,30 @@
   {
    "@type": "SiteNavigationElement",
    "position": 5,
+   "name": "Documentation",
+   "url": "https://aianytime.github.io/memrust/docs/"
+  },
+  {
+   "@type": "SiteNavigationElement",
+   "position": 6,
    "name": "Production",
    "url": "https://aianytime.github.io/memrust/#production"
   },
   {
    "@type": "SiteNavigationElement",
-   "position": 6,
+   "position": 7,
    "name": "Hosted",
    "url": "https://aianytime.github.io/memrust/#hosted"
   },
   {
    "@type": "SiteNavigationElement",
-   "position": 7,
+   "position": 8,
    "name": "FAQ",
    "url": "https://aianytime.github.io/memrust/#faq"
   },
   {
    "@type": "SiteNavigationElement",
-   "position": 8,
+   "position": 9,
    "name": "Contact",
    "url": "https://aianytime.github.io/memrust/#contact"
   }
@@ -571,7 +577,7 @@
       <a href="#why">Why hybrid</a>
       <a href="#shared">Every agent</a>
       <a href="#benchmarks">Benchmarks</a>
-      <a href="#install">Install</a>
+      <a href="docs/">Docs</a>
       <a href="#hosted">Hosted</a>
       <a href="#faq">FAQ</a>
       <a href="#contact">Contact</a>
@@ -970,6 +976,12 @@ claude mcp add memory -- memrust mcp --data-dir ~/.memrust --agent-id planner
     <div class="facts" style="margin-top:1.6rem">
       <span>crates.io</span><span>PyPI</span><span>npm</span><span>Docker Hub</span><span>prebuilt Linux &amp; macOS binaries</span>
     </div>
+
+    <p class="prose" style="margin-top:2rem">
+      From here, the <a href="docs/" style="color:var(--brand-ink)">developer documentation</a>
+      covers the full HTTP API, MCP setup for Claude Code and Cursor, LangGraph and CrewAI
+      recipes, embeddings, the memory lifecycle and operations.
+    </p>
   </section>
 
   <!-- PRODUCTION -->
@@ -1274,6 +1286,7 @@ curl localhost:7700/v1/recall \
     <div class="foot">
       <span>memrust · Apache-2.0 · built by <a href="https://github.com/AIAnytime">AI Anytime</a></span>
       <span class="foot-links">
+        <a href="docs/">Docs</a>
         <a href="https://github.com/AIAnytime/memrust">GitHub</a>
         <a href="https://crates.io/crates/memrust">crates.io</a>
         <a href="https://pypi.org/project/memrust/">PyPI</a>

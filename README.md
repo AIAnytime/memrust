@@ -12,6 +12,10 @@
 [![Docker](https://img.shields.io/docker/v/aianytime/memrust?label=docker)](https://hub.docker.com/r/aianytime/memrust)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
+📖 **[Documentation](https://aianytime.github.io/memrust/docs/)** — quickstart in
+four languages, the full HTTP API, MCP setup for Claude Code and Cursor,
+LangGraph and CrewAI recipes, embeddings, lifecycle and operations.
+
 Not another vector database. Vector DBs answer `query(vector) -> top_k chunks`.
 Agents need something different: a memory system that speaks their language
 (`remember` / `recall` / `forget`), retrieves across multiple signals at once

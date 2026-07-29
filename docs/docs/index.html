@@ -1,0 +1,2296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>memrust documentation — agent memory for developers</title>
+<meta name="description" content="Developer documentation for memrust: install, quickstart in shell, Python, TypeScript and Rust, the full HTTP API, MCP setup for Claude Code and Cursor, LangGraph and CrewAI recipes, embeddings, lifecycle and operations.">
+<link rel="canonical" href="https://aianytime.github.io/memrust/docs/">
+
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="icon" href="../favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<meta name="theme-color" content="#0d0b0a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f7f4ef" media="(prefers-color-scheme: light)">
+
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="author" content="Sonu Kumar">
+<meta name="keywords" content="memrust docs, agent memory API, MCP server setup, Claude Code memory, hybrid retrieval API, BM25 HNSW rust, LangGraph memory, CrewAI memory, vector database docs, RAG documentation">
+
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="memrust">
+<meta property="og:url" content="https://aianytime.github.io/memrust/docs/">
+<meta property="og:title" content="memrust documentation — agent memory for developers">
+<meta property="og:description" content="Install, quickstart in four languages, the full HTTP API, MCP setup for Claude Code and Cursor, LangGraph and CrewAI recipes, embeddings, lifecycle and operations.">
+<meta property="og:image" content="https://aianytime.github.io/memrust/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="en_US">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="memrust documentation">
+<meta name="twitter:description" content="Install, quickstart in four languages, the full HTTP API, MCP setup, framework recipes, embeddings, lifecycle and operations.">
+<meta name="twitter:image" content="https://aianytime.github.io/memrust/og-image.png">
+
+<link rel="alternate" type="text/plain" href="../llms.txt" title="llms.txt — machine-readable project summary">
+
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "TechArticle",
+   "headline": "memrust documentation",
+   "description": "Developer documentation for memrust, an agent-native memory engine: install, quickstart, HTTP API reference, MCP setup, framework recipes, embeddings, lifecycle and operations.",
+   "url": "https://aianytime.github.io/memrust/docs/",
+   "inLanguage": "en",
+   "proficiencyLevel": "Beginner",
+   "dependencies": "Rust toolchain, Docker, Python 3.9+, or Node 18+",
+   "author": { "@type": "Person", "name": "Sonu Kumar" },
+   "about": { "@type": "SoftwareApplication", "name": "memrust", "applicationCategory": "DeveloperApplication" },
+   "isPartOf": { "@type": "WebSite", "name": "memrust", "url": "https://aianytime.github.io/memrust/" }
+  },
+  {
+   "@type": "BreadcrumbList",
+   "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "memrust", "item": "https://aianytime.github.io/memrust/" },
+    { "@type": "ListItem", "position": 2, "name": "Documentation", "item": "https://aianytime.github.io/memrust/docs/" }
+   ]
+  }
+ ]
+}
+</script>
+
+<script>
+  try { var t = localStorage.getItem("memrust-site-theme"); if (t) document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<style>
+  /* ------------------------------------------------------------------
+     Documentation. Same design system as the landing page: the four
+     retrieval signals carry the same hues here that they carry in the
+     product's dashboard, so a colour means one thing everywhere.
+     ------------------------------------------------------------------ */
+  :root {
+    color-scheme: dark;
+    --ink:        #f4f1ec;
+    --ink-2:      #b3ada3;
+    --ink-3:      #7d776e;
+    --ground:     #0d0b0a;
+    --ground-2:   #151211;
+    --panel:      #191614;
+    --rail:       #2b2622;
+    --rail-soft:  #201c19;
+    --brand:      #f97316;
+    --brand-ink:  #fb9a4e;
+    --sig-vector: #3987e5;
+    --sig-lexical:#d95926;
+    --sig-graph:  #199e70;
+    --sig-recency:#c98500;
+    --step--1: clamp(.75rem, .72rem + .12vw, .82rem);
+    --step-0:  clamp(1rem, .96rem + .2vw, 1.06rem);
+    --step-1:  clamp(1.15rem, 1.05rem + .4vw, 1.4rem);
+    --step-2:  clamp(1.5rem, 1.25rem + 1vw, 2.1rem);
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:where(:not([data-theme="dark"])) {
+      color-scheme: light;
+      --ink: #17130f; --ink-2: #554e46; --ink-3: #857d73;
+      --ground: #f7f4ef; --ground-2: #efeae2; --panel: #ffffff;
+      --rail: #ded7cc; --rail-soft: #e8e2d8;
+      --brand: #ea580c; --brand-ink: #c2410c;
+      --sig-vector: #2a78d6; --sig-lexical: #c2410c; --sig-graph: #17845f; --sig-recency: #9a6a00;
+    }
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --ink: #17130f; --ink-2: #554e46; --ink-3: #857d73;
+    --ground: #f7f4ef; --ground-2: #efeae2; --panel: #ffffff;
+    --rail: #ded7cc; --rail-soft: #e8e2d8;
+    --brand: #ea580c; --brand-ink: #c2410c;
+    --sig-vector: #2a78d6; --sig-lexical: #c2410c; --sig-graph: #17845f; --sig-recency: #9a6a00;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation: none !important; transition: none !important; } }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); font-size: var(--step-0); line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--brand-ink); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  ::selection { background: var(--brand); color: #16100a; }
+  :focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 3px; }
+
+  /* header ------------------------------------------------------------ */
+  header {
+    position: sticky; top: 0; z-index: 40;
+    background: color-mix(in srgb, var(--ground) 90%, transparent);
+    backdrop-filter: blur(10px); border-bottom: 1px solid var(--rail-soft);
+  }
+  .bar { display: flex; align-items: center; gap: .8rem; padding: .65rem clamp(1rem, 3vw, 2rem); }
+  .wordmark { display: flex; align-items: center; gap: .55rem; font-weight: 800; letter-spacing: -.02em; font-size: 1.05rem; color: var(--ink); }
+  .wordmark:hover { text-decoration: none; }
+  .chip {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .08em; color: var(--ink-3);
+    border: 1px solid var(--rail); border-radius: 4px; padding: .16rem .42rem;
+  }
+  .spacer { margin-inline: auto; }
+  .btn {
+    display: inline-flex; align-items: center; gap: .45rem; white-space: nowrap;
+    font-size: .88rem; font-weight: 600; padding: .45rem .85rem; border-radius: 7px;
+    border: 1px solid var(--rail); color: var(--ink); background: var(--ground-2);
+    transition: border-color .15s, background .15s; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--ink-3); text-decoration: none; }
+  .btn-brand { background: var(--brand); border-color: var(--brand); color: #180f07; }
+  .btn-brand:hover { background: var(--brand-ink); border-color: var(--brand-ink); }
+  .hide-sm { display: none; }
+  @media (min-width: 720px) { .hide-sm { display: inline-flex; } }
+  /* The contents button only exists for the width where the sidebar is hidden. */
+  @media (min-width: 1000px) { #menu { display: none !important; } }
+  .icon-btn { padding: .42rem .5rem; line-height: 0; }
+  .icon-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .i-sun { display: inline; } .i-moon { display: none; }
+  :root[data-theme="light"] .i-sun { display: none; } :root[data-theme="light"] .i-moon { display: inline; }
+  @media (prefers-color-scheme: light) {
+    :root:where(:not([data-theme="dark"])) .i-sun { display: none; }
+    :root:where(:not([data-theme="dark"])) .i-moon { display: inline; }
+  }
+
+  /* layout ------------------------------------------------------------ */
+  .shell { display: block; max-width: 1400px; margin-inline: auto; }
+  @media (min-width: 1000px) {
+    .shell { display: grid; grid-template-columns: 270px minmax(0, 1fr); align-items: start; }
+  }
+
+  /* sidebar ----------------------------------------------------------- */
+  .side {
+    display: none; position: sticky; top: 3.4rem; height: calc(100vh - 3.4rem);
+    overflow-y: auto; padding: 1.6rem 1rem 4rem 1.5rem;
+    border-right: 1px solid var(--rail-soft); font-size: .9rem;
+    scrollbar-width: thin;
+  }
+  @media (min-width: 1000px) { .side { display: block; } }
+  .side.open { display: block; position: fixed; inset: 3.4rem 0 0 0; height: auto; z-index: 30; background: var(--ground); border-right: 0; }
+  .side .grp {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .13em; text-transform: uppercase;
+    color: var(--ink-3); margin: 1.6rem 0 .5rem; padding-left: .7rem;
+  }
+  .side .grp:first-of-type { margin-top: .4rem; }
+  .side a {
+    display: block; padding: .28rem .7rem; border-left: 2px solid transparent;
+    color: var(--ink-2); border-radius: 0 4px 4px 0; line-height: 1.45;
+  }
+  .side a:hover { color: var(--ink); background: var(--ground-2); text-decoration: none; }
+  .side a.on { color: var(--brand-ink); border-left-color: var(--brand); background: var(--ground-2); font-weight: 600; }
+  .filter {
+    width: 100%; padding: .45rem .65rem; margin-bottom: .4rem;
+    background: var(--ground-2); border: 1px solid var(--rail); border-radius: 7px;
+    color: var(--ink); font-family: var(--sans); font-size: .86rem;
+  }
+  .filter::placeholder { color: var(--ink-3); }
+
+  /* content ----------------------------------------------------------- */
+  main { padding: 2.2rem clamp(1.1rem, 3.5vw, 3.4rem) 6rem; max-width: 62rem; min-width: 0; }
+  h1, h2, h3, h4 { font-weight: 800; letter-spacing: -.022em; text-wrap: balance; line-height: 1.15; }
+  h1 { font-size: var(--step-2); margin: 0 0 .6rem; }
+  h2 {
+    font-size: var(--step-1); margin: 3.6rem 0 1rem; padding-top: 1.6rem;
+    border-top: 1px solid var(--rail-soft);
+  }
+  h2:first-of-type { border-top: 0; padding-top: 0; margin-top: 2.4rem; }
+  h3 { font-size: 1.03rem; margin: 2rem 0 .6rem; letter-spacing: -.01em; }
+  h4 { font-size: .95rem; margin: 1.4rem 0 .5rem; color: var(--ink-2); }
+  section[id], h2[id] { scroll-margin-top: 4.4rem; }
+  p { margin: 0 0 1rem; color: var(--ink-2); max-width: 74ch; }
+  p strong, li strong { color: var(--ink); font-weight: 650; }
+  ul, ol { color: var(--ink-2); max-width: 74ch; padding-left: 1.3rem; margin: 0 0 1rem; }
+  li { margin-bottom: .35rem; }
+  .lede { font-size: var(--step-1); color: var(--ink-2); max-width: 60ch; line-height: 1.5; margin-bottom: 2rem; }
+  .eyebrow {
+    font-family: var(--mono); font-size: var(--step--1); letter-spacing: .14em;
+    text-transform: uppercase; color: var(--brand-ink); margin: 0 0 .9rem;
+  }
+  .accent { color: var(--brand); font-style: italic; }
+  code {
+    font-family: var(--mono); font-size: .87em; background: var(--ground-2);
+    border: 1px solid var(--rail-soft); border-radius: 4px; padding: .08em .35em;
+    color: var(--ink); white-space: nowrap;
+  }
+  a code { color: var(--brand-ink); }
+
+  /* code blocks -------------------------------------------------------- */
+  .cb { position: relative; margin: 0 0 1.3rem; border: 1px solid var(--rail); border-radius: 10px; background: var(--panel); overflow: hidden; }
+  .cb-head {
+    display: flex; align-items: center; gap: .5rem; padding: .4rem .75rem;
+    border-bottom: 1px solid var(--rail-soft); background: var(--ground-2);
+    font-family: var(--mono); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
+  }
+  .copy {
+    margin-left: auto; font-family: var(--mono); font-size: .68rem; letter-spacing: .06em;
+    background: transparent; border: 1px solid var(--rail); border-radius: 5px;
+    color: var(--ink-3); padding: .12rem .45rem; cursor: pointer; text-transform: uppercase;
+  }
+  .copy:hover { color: var(--ink); border-color: var(--ink-3); }
+  pre { margin: 0; padding: 1rem 1.15rem; overflow-x: auto; font-family: var(--mono); font-size: .82rem; line-height: 1.7; color: var(--ink); }
+  pre .c { color: var(--ink-3); }
+  pre .k { color: var(--sig-vector); }
+  pre .s { color: var(--sig-graph); }
+  pre .f { color: var(--brand-ink); }
+  pre .n { color: var(--sig-recency); }
+  [hidden] { display: none !important; }
+
+  /* tabs --------------------------------------------------------------- */
+  .tabs { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .8rem; }
+  .tab {
+    font-family: var(--mono); font-size: var(--step--1); padding: .3rem .7rem; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--rail); background: transparent; color: var(--ink-2);
+  }
+  .tab[aria-selected="true"] { background: var(--brand); border-color: var(--brand); color: #180f07; font-weight: 600; }
+
+  /* tables -------------------------------------------------------------- */
+  .tw { overflow-x: auto; margin: 0 0 1.4rem; border: 1px solid var(--rail-soft); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: .88rem; min-width: 34rem; }
+  th, td { text-align: left; padding: .6rem .85rem; border-bottom: 1px solid var(--rail-soft); vertical-align: top; color: var(--ink-2); }
+  th { color: var(--ink); font-weight: 650; background: var(--ground-2); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td code, th code { white-space: nowrap; }
+
+  /* callouts ------------------------------------------------------------ */
+  .note {
+    border: 1px solid var(--rail); border-left: 3px solid var(--brand);
+    background: var(--ground-2); border-radius: 0 9px 9px 0;
+    padding: .9rem 1.1rem; margin: 0 0 1.4rem; max-width: 74ch;
+  }
+  .note p:last-child { margin-bottom: 0; }
+  .note .lbl {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--brand-ink); display: block; margin-bottom: .3rem;
+  }
+  .note.warn { border-left-color: var(--sig-lexical); }
+  .note.warn .lbl { color: var(--sig-lexical); }
+  .note.ok { border-left-color: var(--sig-graph); }
+  .note.ok .lbl { color: var(--sig-graph); }
+
+  /* signal pills --------------------------------------------------------- */
+  .sig { font-family: var(--mono); font-size: .78rem; font-weight: 600; }
+  .sig-v { color: var(--sig-vector); }
+  .sig-l { color: var(--sig-lexical); }
+  .sig-g { color: var(--sig-graph); }
+  .sig-r { color: var(--sig-recency); }
+
+  .cards { display: grid; gap: 1rem; margin-bottom: 1.4rem; }
+  @media (min-width: 700px) { .cards { grid-template-columns: repeat(2, 1fr); } }
+  .card { border: 1px solid var(--rail-soft); border-radius: 10px; padding: 1.1rem 1.2rem; background: var(--ground-2); }
+  .card h4 { margin-top: 0; color: var(--ink); }
+  .card p:last-child { margin-bottom: 0; }
+
+  /* endpoint headings ---------------------------------------------------- */
+  .ep {
+    display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap;
+    font-family: var(--mono); font-size: .95rem; margin: 2.2rem 0 .7rem;
+    padding-bottom: .45rem; border-bottom: 1px solid var(--rail-soft);
+  }
+  .verb {
+    font-size: .68rem; letter-spacing: .1em; padding: .18rem .45rem; border-radius: 4px;
+    background: var(--brand); color: #180f07; font-weight: 700;
+  }
+  .verb.get { background: var(--sig-vector); color: #fff; }
+  .ep .path { font-weight: 700; color: var(--ink); }
+  .ep .what { font-family: var(--sans); font-size: .84rem; color: var(--ink-3); margin-left: auto; }
+
+  footer { border-top: 1px solid var(--rail-soft); margin-top: 4rem; padding-top: 1.6rem; font-size: .87rem; color: var(--ink-3); }
+  footer a { color: var(--ink-2); }
+  .foot-links { display: flex; flex-wrap: wrap; gap: 1.2rem; margin-top: .6rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <a class="wordmark" href="../">
+      <svg width="26" height="26" viewBox="0 0 48 48" aria-hidden="true">
+        <path d="M24 4 42 14v8L24 12 6 22v-8L24 4z" fill="#f97316"/>
+        <rect x="12" y="22" width="24" height="7" rx="2" fill="currentColor" opacity=".8"/>
+        <rect x="12" y="31" width="24" height="6" rx="2" fill="#f97316" opacity=".8"/>
+        <rect x="12" y="39" width="24" height="5" rx="2" fill="currentColor" opacity=".35"/>
+      </svg>
+      memrust
+    </a>
+    <span class="chip">DOCS</span>
+    <span class="spacer"></span>
+    <button class="btn" id="menu" aria-label="Table of contents" style="display:inline-flex">Contents</button>
+    <a class="btn hide-sm" href="https://github.com/AIAnytime/memrust">GitHub</a>
+    <a class="btn btn-brand hide-sm" href="https://calendar.app.google/7mXS2JweP2pmmGbYA">Book a demo</a>
+    <button class="btn icon-btn" id="theme" aria-label="Toggle colour theme">
+      <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.4v2.4M12 19.2v2.4M4.2 12H1.8M22.2 12h-2.4M5.6 5.6 3.9 3.9M20.1 20.1l-1.7-1.7M18.4 5.6l1.7-1.7M3.9 20.1l1.7-1.7"/></svg>
+      <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.3A8.6 8.6 0 0 1 9.7 3.5a8.6 8.6 0 1 0 10.8 10.8z"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="shell">
+
+<aside class="side" id="side">
+  <input class="filter" id="filter" type="search" placeholder="Filter sections…" aria-label="Filter sections">
+
+  <div class="grp">Start here</div>
+  <a href="#intro">What memrust is</a>
+  <a href="#model">Memory vs. vectors</a>
+  <a href="#install">Install</a>
+  <a href="#quickstart">Quickstart</a>
+
+  <div class="grp">Core concepts</div>
+  <a href="#record">The memory record</a>
+  <a href="#kinds">Memory kinds</a>
+  <a href="#retrieval">The four signals</a>
+  <a href="#strategies">Recall strategies</a>
+  <a href="#namespaces">Namespaces</a>
+  <a href="#agents">Agents &amp; visibility</a>
+
+  <div class="grp">API reference</div>
+  <a href="#api">HTTP conventions</a>
+  <a href="#api-remember">remember</a>
+  <a href="#api-batch">remember_batch</a>
+  <a href="#api-recall">recall</a>
+  <a href="#api-forget">forget</a>
+  <a href="#api-list">memories &amp; entities</a>
+  <a href="#api-lifecycle">lifecycle</a>
+  <a href="#api-snapshot">snapshot &amp; restore</a>
+  <a href="#api-admin">namespaces &amp; health</a>
+  <a href="#errors">Errors</a>
+
+  <div class="grp">Integrations</div>
+  <a href="#mcp">MCP</a>
+  <a href="#claude-code">Claude Code &amp; Desktop</a>
+  <a href="#cursor">Cursor, Windsurf, Codex</a>
+  <a href="#langgraph">LangGraph</a>
+  <a href="#crewai">CrewAI</a>
+  <a href="#openai-loop">Plain LLM loop</a>
+
+  <div class="grp">Going deeper</div>
+  <a href="#embeddings">Embeddings</a>
+  <a href="#capture">Capturing memories</a>
+  <a href="#rag">Using it for RAG</a>
+  <a href="#lifecycle">Lifecycle &amp; consolidation</a>
+  <a href="#tuning">Tuning recall</a>
+
+  <div class="grp">Operations</div>
+  <a href="#deploy">Deployment</a>
+  <a href="#auth">Authentication</a>
+  <a href="#durability">Durability</a>
+  <a href="#observability">Observability</a>
+  <a href="#backup">Backup &amp; migration</a>
+
+  <div class="grp">Reference</div>
+  <a href="#cli">CLI flags</a>
+  <a href="#sdk-python">Python SDK</a>
+  <a href="#sdk-ts">TypeScript SDK</a>
+  <a href="#sdk-rust">Rust crate</a>
+  <a href="#benchmarks">Benchmarks</a>
+  <a href="#troubleshooting">Troubleshooting</a>
+</aside>
+
+<main id="top">
+
+<p class="eyebrow">Documentation</p>
+<h1>memrust for developers</h1>
+<p class="lede">
+  An agent-native memory engine in a single Rust binary. Store what happened,
+  recall it across sessions, tools and agents — over four fused retrieval
+  signals that each explain their contribution.
+</p>
+
+<div class="cards">
+  <div class="card">
+    <h4>New here?</h4>
+    <p>Read <a href="#model">Memory vs. vectors</a> first — it is the one concept
+    that makes the rest obvious — then run the <a href="#quickstart">quickstart</a>.</p>
+  </div>
+  <div class="card">
+    <h4>Just want it working in Claude?</h4>
+    <p>Two commands in <a href="#claude-code">Claude Code &amp; Desktop</a>. No
+    account, no keys, no embedding provider.</p>
+  </div>
+</div>
+
+<!-- ================================================================= -->
+<h2 id="intro">What memrust is</h2>
+
+<p>
+  memrust answers <em>“what do I know about this?”</em> rather than
+  <em>“which vectors are nearest?”</em>. It is a memory layer for AI agents:
+  one binary that stores memories, indexes each one four different ways, and
+  serves them over HTTP and the Model Context Protocol.
+</p>
+
+<p>Concretely, it gives you:</p>
+
+<ul>
+  <li><strong>Three verbs</strong> — <code>remember</code>, <code>recall</code>,
+      <code>forget</code> — over HTTP, MCP, Python, TypeScript or Rust.</li>
+  <li><strong>Hybrid retrieval</strong> fusing vector similarity, BM25 keywords,
+      an entity graph and recency, with a per-signal breakdown on every hit.</li>
+  <li><strong>Shared memory across tools</strong>: Claude Code, Cursor, Codex,
+      LangGraph and CrewAI can all read and write the same store.</li>
+  <li><strong>A lifecycle</strong>: TTLs, expiry sweeps, and consolidation of old
+      episodic memories into durable semantic ones.</li>
+  <li><strong>Operational seriousness</strong>: write-ahead log with fsync,
+      checkpoint recovery, namespaces, scoped API keys, Prometheus metrics.</li>
+</ul>
+
+<p>
+  No external services are required. No vector database, no Elasticsearch, no
+  embedding API key — the default embedder runs offline. You add those when you
+  want better quality, not to get started.
+</p>
+
+<!-- ================================================================= -->
+<h2 id="model">Memory vs. vectors — the mental model</h2>
+
+<p>
+  This trips up almost everyone arriving from a vector database, so it is worth
+  being precise.
+</p>
+
+<p>
+  <strong>A vector is not the memory. It is one of four indexes over the
+  memory.</strong> The memory is the record — its text, kind, timestamp,
+  importance, extracted entities, tags, session, owning agent, visibility,
+  expiry and provenance. When you store one, memrust puts it into four places at
+  once:
+</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Index</th><th>Built from</th><th>Answers</th></tr></thead>
+  <tbody>
+    <tr><td><span class="sig sig-v">vector</span></td><td>an embedding of the text (HNSW, M=16)</td><td>“what <em>means</em> something similar?”</td></tr>
+    <tr><td><span class="sig sig-l">lexical</span></td><td>tokens of the text (BM25, k1=1.2, b=0.75)</td><td>“what contains this exact term?”</td></tr>
+    <tr><td><span class="sig sig-g">graph</span></td><td>entities extracted at write time, linked by co-occurrence</td><td>“what is <em>related</em> to this?”</td></tr>
+    <tr><td><span class="sig sig-r">recency</span></td><td>the timestamp (exponential decay, 1-week half-life)</td><td>“what happened lately?”</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  A recall queries all four and fuses the rankings with reciprocal-rank fusion.
+  So a memory can be found by any of them — and the API never returns the raw
+  embedding, because it is an implementation detail you should not be handling.
+</p>
+
+<h3>Why this is not a detail</h3>
+
+<p>
+  Store one incident note and ask for its ticket number. Here is a real response
+  from a running engine, trimmed to the scores:
+</p>
+
+<div class="cb">
+  <div class="cb-head">recall "INC-90312"<button class="copy">copy</button></div>
+<pre><span class="s">"score"</span>: 0.0401,
+<span class="s">"signals"</span>: {
+  <span class="s">"vector"</span>:   0.0164,   <span class="c">// found it, but so would a near-identical ticket</span>
+  <span class="s">"lexical"</span>:  0.0164,   <span class="c">// exact token match — this is the one that is right</span>
+  <span class="s">"graph"</span>:    0.0164,   <span class="c">// INC-90312 was extracted as an entity at write time</span>
+  <span class="s">"recency"</span>:  1.0,
+  <span class="s">"importance"</span>: 0.004
+}</pre>
+</div>
+
+<p>
+  Three signals contributed. A pure vector store has one of them, and for
+  identifiers that one is weak: <code>INC-90312</code> and <code>INC-90319</code>
+  are near-identical strings, so they are near-identical vectors. Measured over
+  500 memories with identical embeddings, exact-identifier hit@5 is
+  <strong>27% for brute-force vector search, 27% for FAISS, Chroma and Qdrant,
+  and 75% for memrust</strong>. Exact search scoring the same as the approximate
+  indexes is the tell: this is a ceiling of the embedding, not an index-quality
+  problem a faster ANN fixes. See <a href="#benchmarks">Benchmarks</a> to
+  reproduce it.
+</p>
+
+<div class="note">
+  <span class="lbl">Rule of thumb</span>
+  <p>If your data contains identifiers, error codes, ticket numbers, SKUs or
+  proper names, the non-vector signals are doing most of the work — and you get
+  them for free.</p>
+</div>
+
+<!-- ================================================================= -->
+<h2 id="install">Install</h2>
+
+<div class="tabs" role="tablist" aria-label="Install method">
+  <button class="tab" role="tab" aria-selected="true" aria-controls="i-cargo" id="ti-cargo">cargo</button>
+  <button class="tab" role="tab" aria-selected="false" aria-controls="i-docker" id="ti-docker">docker</button>
+  <button class="tab" role="tab" aria-selected="false" aria-controls="i-sdk" id="ti-sdk">sdks</button>
+  <button class="tab" role="tab" aria-selected="false" aria-controls="i-src" id="ti-src">source</button>
+</div>
+
+<div role="tabpanel" id="i-cargo" aria-labelledby="ti-cargo">
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre>cargo install memrust
+memrust --version
+
+<span class="c"># HTTP API and a built-in dashboard on :7700</span>
+memrust serve</pre>
+</div>
+</div>
+
+<div role="tabpanel" id="i-docker" aria-labelledby="ti-docker" hidden>
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre>docker run -p 7700:7700 -v memrust-data:/data aianytime/memrust
+
+<span class="c"># The named volume matters. memrust keeps a write-ahead log and a</span>
+<span class="c"># checkpoint on disk; without a volume every memory dies with the</span>
+<span class="c"># container.</span></pre>
+</div>
+</div>
+
+<div role="tabpanel" id="i-sdk" aria-labelledby="ti-sdk" hidden>
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre><span class="c"># Clients only — they talk to a running server, they do not embed one.</span>
+pip install memrust
+npm install memrust-client
+cargo add memrust        <span class="c"># this one IS the engine, usable as a library</span></pre>
+</div>
+</div>
+
+<div role="tabpanel" id="i-src" aria-labelledby="ti-src" hidden>
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre>git clone https://github.com/AIAnytime/memrust
+cd memrust
+cargo build --release
+./target/release/memrust serve --data-dir ./data
+
+cargo test               <span class="c"># the test suite</span>
+./target/release/memrust demo   <span class="c"># seeds 8 memories and runs three recalls</span></pre>
+</div>
+</div>
+
+<p>
+  Prebuilt Linux and macOS binaries are attached to each
+  <a href="https://github.com/AIAnytime/memrust/releases">GitHub release</a>.
+</p>
+
+<!-- ================================================================= -->
+<h2 id="quickstart">Quickstart</h2>
+
+<p>
+  Start the server, store a memory, ask for it back. Everything below assumes
+  <code>memrust serve</code> is listening on <code>127.0.0.1:7700</code>.
+</p>
+
+<div class="tabs" role="tablist" aria-label="Quickstart language">
+  <button class="tab" role="tab" aria-selected="true" aria-controls="q-sh" id="tq-sh">curl</button>
+  <button class="tab" role="tab" aria-selected="false" aria-controls="q-py" id="tq-py">python</button>
+  <button class="tab" role="tab" aria-selected="false" aria-controls="q-ts" id="tq-ts">typescript</button>
+  <button class="tab" role="tab" aria-selected="false" aria-controls="q-rs" id="tq-rs">rust</button>
+</div>
+
+<div role="tabpanel" id="q-sh" aria-labelledby="tq-sh">
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre><span class="c"># 1. store something that happened</span>
+curl -s localhost:7700/v1/remember \
+  -H <span class="s">'content-type: application/json'</span> \
+  -d <span class="s">'{
+    "text": "Dana Whitfield escalated INC-90312: checkout latency hit 900ms after the Redis upgrade.",
+    "kind": "episodic",
+    "tags": ["incident", "checkout"],
+    "importance": 0.8
+  }'</span>
+
+<span class="c"># 2. ask for it back — by ticket, by person, or by meaning</span>
+curl -s localhost:7700/v1/recall \
+  -H <span class="s">'content-type: application/json'</span> \
+  -d <span class="s">'{"query": "why was checkout slow?", "top_k": 3}'</span></pre>
+</div>
+</div>
+
+<div role="tabpanel" id="q-py" aria-labelledby="tq-py" hidden>
+<div class="cb">
+  <div class="cb-head">python<button class="copy">copy</button></div>
+<pre><span class="c"># pip install memrust</span>
+<span class="k">from</span> memrust <span class="k">import</span> MemrustClient
+
+memory = <span class="f">MemrustClient</span>(<span class="s">"http://127.0.0.1:7700"</span>)
+
+memory.<span class="f">remember</span>(
+    <span class="s">"Dana Whitfield escalated INC-90312: checkout latency hit 900ms "</span>
+    <span class="s">"after the Redis upgrade."</span>,
+    kind=<span class="s">"episodic"</span>,
+    tags=[<span class="s">"incident"</span>, <span class="s">"checkout"</span>],
+    importance=<span class="n">0.8</span>,
+)
+
+<span class="k">for</span> hit <span class="k">in</span> memory.<span class="f">recall</span>(<span class="s">"why was checkout slow?"</span>, top_k=<span class="n">3</span>):
+    <span class="f">print</span>(<span class="f">round</span>(hit[<span class="s">"score"</span>], <span class="n">4</span>), hit[<span class="s">"record"</span>][<span class="s">"text"</span>])
+    <span class="f">print</span>(<span class="s">"   signals:"</span>, hit[<span class="s">"signals"</span>])</pre>
+</div>
+</div>
+
+<div role="tabpanel" id="q-ts" aria-labelledby="tq-ts" hidden>
+<div class="cb">
+  <div class="cb-head">typescript<button class="copy">copy</button></div>
+<pre><span class="c">// npm install memrust-client</span>
+<span class="k">import</span> { MemrustClient } <span class="k">from</span> <span class="s">"memrust-client"</span>;
+
+<span class="k">const</span> memory = <span class="k">new</span> <span class="f">MemrustClient</span>(<span class="s">"http://127.0.0.1:7700"</span>);
+
+<span class="k">await</span> memory.<span class="f">remember</span>(
+  <span class="s">"Dana Whitfield escalated INC-90312: checkout latency hit 900ms after the Redis upgrade."</span>,
+  { kind: <span class="s">"episodic"</span>, tags: [<span class="s">"incident"</span>, <span class="s">"checkout"</span>], importance: <span class="n">0.8</span> },
+);
+
+<span class="k">const</span> hits = <span class="k">await</span> memory.<span class="f">recall</span>(<span class="s">"why was checkout slow?"</span>, { topK: <span class="n">3</span> });
+<span class="k">for</span> (<span class="k">const</span> h <span class="k">of</span> hits) console.<span class="f">log</span>(h.score.<span class="f">toFixed</span>(<span class="n">4</span>), h.record.text, h.signals);</pre>
+</div>
+</div>
+
+<div role="tabpanel" id="q-rs" aria-labelledby="tq-rs" hidden>
+<div class="cb">
+  <div class="cb-head">rust<button class="copy">copy</button></div>
+<pre><span class="c">// cargo add memrust — embeds the engine, no server process</span>
+<span class="k">use</span> memrust::{MemoryEngine, RememberRequest, RecallRequest, MemoryKind};
+
+<span class="k">fn</span> <span class="f">main</span>() -&gt; anyhow::Result&lt;()&gt; {
+    <span class="k">let mut</span> memory = MemoryEngine::<span class="f">open</span>(<span class="s">"./data"</span>.as_ref())?;
+
+    memory.<span class="f">remember</span>(RememberRequest {
+        text: <span class="s">"Dana Whitfield escalated INC-90312: checkout latency hit 900ms."</span>.into(),
+        kind: MemoryKind::Episodic,
+        tags: <span class="f">vec!</span>[<span class="s">"incident"</span>.into()],
+        importance: <span class="f">Some</span>(<span class="n">0.8</span>),
+        ..Default::<span class="f">default</span>()
+    })?;
+
+    <span class="k">for</span> hit <span class="k">in</span> memory.<span class="f">recall</span>(&amp;RecallRequest {
+        query: <span class="s">"why was checkout slow?"</span>.into(),
+        top_k: <span class="f">Some</span>(<span class="n">3</span>),
+        ..Default::<span class="f">default</span>()
+    }) {
+        <span class="f">println!</span>(<span class="s">"{:.4} {}"</span>, hit.score, hit.record.text);
+    }
+    <span class="f">Ok</span>(())
+}</pre>
+</div>
+</div>
+
+<p>
+  The engine extracted the entities on its own. You never asked it to:
+</p>
+
+<div class="cb">
+  <div class="cb-head">response · entities<button class="copy">copy</button></div>
+<pre><span class="s">"entities"</span>: [<span class="s">"incident"</span>, <span class="s">"checkout"</span>, <span class="s">"dana whitfield"</span>,
+             <span class="s">"inc-90312"</span>, <span class="s">"900ms"</span>, <span class="s">"redis"</span>]</pre>
+</div>
+
+<p>
+  Open <a href="http://127.0.0.1:7700">http://127.0.0.1:7700</a> for the built-in
+  dashboard: browse memories, run recalls, watch the signal breakdown change as
+  you switch strategy.
+</p>
+
+<!-- ================================================================= -->
+<h2 id="record">The memory record</h2>
+
+<p>Everything memrust stores has this shape. Only <code>text</code> is required.</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Field</th><th>Type</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>id</code></td><td>uuid</td><td>Assigned by the engine. Use it to <code>forget</code>.</td></tr>
+    <tr><td><code>text</code></td><td>string</td><td>The memory itself. Everything else is derived from or attached to it.</td></tr>
+    <tr><td><code>kind</code></td><td>enum</td><td>See <a href="#kinds">memory kinds</a>. Default <code>episodic</code>.</td></tr>
+    <tr><td><code>created_at</code></td><td>i64</td><td>Unix milliseconds. Drives the recency signal.</td></tr>
+    <tr><td><code>importance</code></td><td>0.0–1.0</td><td>A retrieval boost. Default 0.5. Contributes a small, bounded amount — it nudges ranking, it does not override relevance.</td></tr>
+    <tr><td><code>expires_at</code></td><td>i64?</td><td>Invisible to recall past this instant; deleted by the next lifecycle sweep. Set via <code>ttl_seconds</code>.</td></tr>
+    <tr><td><code>entities</code></td><td>string[]</td><td>Extracted at write time. Lower-cased. Supply your own to skip the heuristic.</td></tr>
+    <tr><td><code>tags</code></td><td>string[]</td><td>Yours. Also fed to the entity graph, so a tag is a retrievable relation, not just a filter.</td></tr>
+    <tr><td><code>session_id</code></td><td>string?</td><td>Conversation or run. Filterable, and the unit of <code>snapshot</code>.</td></tr>
+    <tr><td><code>agent_id</code></td><td>string?</td><td>Owner. Setting it flips the default visibility to <code>private</code>.</td></tr>
+    <tr><td><code>visibility</code></td><td>enum</td><td><code>shared</code> or <code>private</code>. See <a href="#agents">agents</a>.</td></tr>
+    <tr><td><code>metadata</code></td><td>json?</td><td>Opaque passthrough. Stored and returned; <strong>not</strong> indexed or filterable.</td></tr>
+    <tr><td><code>sources</code></td><td>uuid[]</td><td>Provenance. Present on consolidated summaries: the memories folded into this one.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note warn">
+  <span class="lbl">Note</span>
+  <p><code>metadata</code> is a payload, not a query surface. If you need to
+  retrieve by an attribute, put it in <code>tags</code> — tags are filterable
+  <em>and</em> feed the entity graph.</p>
+</div>
+
+<!-- ================================================================= -->
+<h2 id="kinds">Memory kinds</h2>
+
+<p>
+  Six kinds, mirroring how agent frameworks reason about memory rather than how
+  databases store rows. The kind changes lifecycle behaviour and gives you a
+  cheap, meaningful filter.
+</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Kind</th><th>For</th><th>Lifecycle</th></tr></thead>
+  <tbody>
+    <tr><td><code>episodic</code> <em>(default)</em></td><td>Things that happened: events, turns, actions taken.</td><td>Consolidated into <code>semantic</code> after 7 days.</td></tr>
+    <tr><td><code>semantic</code></td><td>Distilled facts, independent of when they were learned.</td><td>Never expires by default.</td></tr>
+    <tr><td><code>working</code></td><td>Scratch state for the current task.</td><td><strong>Expires after 1 day</strong> unless you set a TTL.</td></tr>
+    <tr><td><code>reflection</code></td><td>The agent's conclusions about its own behaviour.</td><td>Never expires by default.</td></tr>
+    <tr><td><code>tool_call</code></td><td>Tool invocations and their results.</td><td>Never expires by default.</td></tr>
+    <tr><td><code>procedural</code></td><td>How-to knowledge: workflows, runbooks, few-shot patterns.</td><td>Never expires by default.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  <code>procedural</code> is the one people skip and shouldn't. An agent that
+  remembers <em>how</em> it did something is the one that gets better; an agent
+  that only remembers what happened just gets more context.
+</p>
+
+<div class="cb">
+  <div class="cb-head">python · filter by kind<button class="copy">copy</button></div>
+<pre><span class="c"># only runbooks, ignore the incident chatter</span>
+memory.<span class="f">recall</span>(<span class="s">"how do we roll back checkout?"</span>, kinds=[<span class="s">"procedural"</span>])</pre>
+</div>
+
+<!-- ================================================================= -->
+<h2 id="retrieval">The four signals</h2>
+
+<p>
+  Every recall runs all four over the same memories and fuses their
+  <em>rankings</em> — not their raw scores — with reciprocal-rank fusion
+  (K=60). Fusing ranks is what makes it safe to combine a cosine similarity, a
+  BM25 score and a graph weight, which have no common scale.
+</p>
+
+<div class="cards">
+  <div class="card">
+    <h4><span class="sig sig-v">vector</span> — meaning</h4>
+    <p>In-crate HNSW, M=16, ef_construction=200, ef_search=100. Catches
+    paraphrase: “why was checkout slow” finds “latency hit 900ms”. SQ8 scalar
+    quantization engages automatically at ≥1024 dims.</p>
+  </div>
+  <div class="card">
+    <h4><span class="sig sig-l">lexical</span> — exactness</h4>
+    <p>In-crate BM25, k1=1.2, b=0.75. Catches what embeddings blur:
+    identifiers, error codes, ticket numbers, version strings, names.</p>
+  </div>
+  <div class="card">
+    <h4><span class="sig sig-g">graph</span> — relatedness</h4>
+    <p>Entities extracted at write time and linked by co-occurrence, traversed
+    one hop and weighted by rarity. Finds what is <em>connected</em> to the
+    query, not merely similar to it.</p>
+  </div>
+  <div class="card">
+    <h4><span class="sig sig-r">recency</span> — time</h4>
+    <p>Exponential decay with a one-week half-life. “What did we decide lately”
+    is not a similarity question, and treating it as one is why agents cite
+    stale decisions.</p>
+  </div>
+</div>
+
+<h3>Reading the breakdown</h3>
+
+<p>
+  Every hit carries its per-signal contribution. This is not decoration — it
+  lets an agent (or you) tell a strong semantic match from a lucky keyword hit.
+</p>
+
+<div class="cb">
+  <div class="cb-head">json · one hit<button class="copy">copy</button></div>
+<pre>{
+  <span class="s">"record"</span>: { <span class="s">"id"</span>: <span class="s">"15a16ce6-…"</span>, <span class="s">"text"</span>: <span class="s">"Dana Whitfield escalated INC-90312…"</span>, … },
+  <span class="s">"score"</span>: 0.0401,
+  <span class="s">"signals"</span>: {
+    <span class="s">"vector"</span>: 0.0164,      <span class="c">// reciprocal-rank contribution, 0 if unmatched</span>
+    <span class="s">"lexical"</span>: 0.0164,
+    <span class="s">"graph"</span>: 0.0164,
+    <span class="s">"recency"</span>: 1.0,        <span class="c">// decay factor in 0..1, not a rank</span>
+    <span class="s">"importance"</span>: 0.004,   <span class="c">// the importance boost actually applied</span>
+    <span class="s">"rerank"</span>: 0.0          <span class="c">// 0 unless a reranker ran</span>
+  }
+}</pre>
+</div>
+
+<div class="note warn">
+  <span class="lbl">Gotcha — entity extraction</span>
+  <p>
+    The extractor is a deterministic heuristic: identifiers with digits
+    (<code>INC-90312</code>), short all-caps terms (<code>API</code>,
+    <code>GPU</code>), multi-word capitalised runs (<code>Dana Whitfield</code>),
+    plus your tags. A <strong>single capitalised word at the start of a
+    sentence</strong> is deliberately skipped, because otherwise every sentence
+    donates its first word as an entity.
+  </p>
+  <p>
+    In practice: querying <code>"Redis"</code> alone yields
+    <code>graph: 0.0</code>, while <code>"the Redis upgrade"</code> yields
+    <code>graph: 0.0164</code>. If you build queries programmatically and want
+    the graph signal, pass a phrase rather than a bare capitalised token — or
+    supply <code>entities</code> explicitly when writing.
+  </p>
+</div>
+
+<!-- ================================================================= -->
+<h2 id="strategies">Recall strategies</h2>
+
+<p>
+  A strategy reweights the fusion. It <strong>never switches an index off</strong>
+  — an exact-identifier query still works under <code>semantic</code>, and a
+  conceptual query still works under <code>lexical</code>. You are tilting the
+  blend, not choosing an engine.
+</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Strategy</th><th class="sig sig-v">vector</th><th class="sig sig-l">lexical</th><th class="sig sig-g">graph</th><th class="sig sig-r">recency</th><th>Use when</th></tr></thead>
+  <tbody>
+    <tr><td><code>balanced</code> <em>(default)</em></td><td>1.0</td><td>1.0</td><td>0.7</td><td>0.3</td><td>You don't know. Genuinely the right default.</td></tr>
+    <tr><td><code>semantic</code></td><td>1.0</td><td>0.3</td><td>0.5</td><td>0.1</td><td>Conceptual questions, paraphrase, “what do we think about X”.</td></tr>
+    <tr><td><code>lexical</code></td><td>0.3</td><td>1.0</td><td>0.5</td><td>0.1</td><td>An identifier, error code or exact phrase you already know.</td></tr>
+    <tr><td><code>recent</code></td><td>0.5</td><td>0.5</td><td>0.3</td><td>1.2</td><td>“What changed?”, “where did we leave off?”, session resumption.</td></tr>
+    <tr><td><code>relational</code></td><td>0.4</td><td>0.4</td><td>1.2</td><td>0.2</td><td>“Everything connected to Acme” — entity-centred exploration.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="cb">
+  <div class="cb-head">shell · the same store, three questions<button class="copy">copy</button></div>
+<pre>curl -s localhost:7700/v1/recall -H <span class="s">'content-type: application/json'</span> \
+  -d <span class="s">'{"query": "E1234", "strategy": "lexical"}'</span>
+
+curl -s localhost:7700/v1/recall -H <span class="s">'content-type: application/json'</span> \
+  -d <span class="s">'{"query": "what does the user prefer?", "strategy": "semantic"}'</span>
+
+curl -s localhost:7700/v1/recall -H <span class="s">'content-type: application/json'</span> \
+  -d <span class="s">'{"query": "the Acme renewal", "strategy": "relational"}'</span></pre>
+</div>
+
+<!-- ================================================================= -->
+<h2 id="namespaces">Namespaces</h2>
+
+<p>
+  A namespace is a <strong>separate engine</strong>: its own HNSW index, its own
+  BM25 index, its own entity graph, its own WAL, its own checkpoint, its own
+  directory, its own embedding dimension. It is not a filter over a shared
+  index.
+</p>
+
+<p>That has consequences worth knowing:</p>
+
+<ul>
+  <li>One tenant's bulk ingest cannot slow another tenant's recall.</li>
+  <li>Deleting a namespace is a directory delete, not a scan-and-delete.</li>
+  <li>Two namespaces may use <em>different embedding models</em>.</li>
+  <li>There is no cross-namespace query. By design — that is the isolation.</li>
+</ul>
+
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre><span class="c"># Pick a namespace per request with a header.</span>
+curl -s localhost:7700/v1/remember \
+  -H <span class="s">'content-type: application/json'</span> \
+  -H <span class="s">'X-Memrust-Namespace: acme'</span> \
+  -d <span class="s">'{"text": "Acme prefers monthly invoicing."}'</span>
+
+curl -s localhost:7700/v1/namespaces
+<span class="c"># {"namespaces":["acme","default"]}</span></pre>
+</div>
+
+<p>
+  Namespaces are created on first use. In the SDKs, pass it once at construction:
+  <code>MemrustClient(url, namespace="acme")</code>.
+</p>
+
+<div class="note">
+  <span class="lbl">Choosing a boundary</span>
+  <p>One namespace per <strong>customer</strong> or per <strong>project</strong>.
+  Not per user and not per conversation — use <code>session_id</code> for those,
+  which is a filter within one index. Thousands of namespaces are fine; millions
+  are not, because each one holds open its own indexes.</p>
+</div>
+
+<!-- ================================================================= -->
+<h2 id="agents">Agents &amp; visibility</h2>
+
+<p>
+  This is what makes one store safe to share between agents that should not see
+  everything about each other.
+</p>
+
+<ul>
+  <li>A memory written <strong>without</strong> an <code>agent_id</code> is
+      unowned and visible to everyone.</li>
+  <li>A memory written <strong>with</strong> an <code>agent_id</code> defaults to
+      <code>private</code> — only that agent recalls it.</li>
+  <li>Set <code>"visibility": "shared"</code> to publish it to the team.</li>
+  <li>Recall with <code>as_agent</code> sees: shared memories, unowned memories,
+      and its own private ones.</li>
+</ul>
+
+<div class="cb">
+  <div class="cb-head">python · two agents, one store<button class="copy">copy</button></div>
+<pre>researcher = <span class="f">MemrustClient</span>(URL, agent_id=<span class="s">"researcher"</span>)
+writer     = <span class="f">MemrustClient</span>(URL, agent_id=<span class="s">"writer"</span>)
+
+<span class="c"># private by default because agent_id is set</span>
+researcher.<span class="f">remember</span>(<span class="s">"source paywalled; used the cached copy"</span>, kind=<span class="s">"reflection"</span>)
+
+<span class="c"># deliberately published to the team</span>
+researcher.<span class="f">remember</span>(
+    <span class="s">"Q3 infra spend was $412k, up 8% on Q2."</span>,
+    kind=<span class="s">"semantic"</span>, visibility=<span class="s">"shared"</span>,
+)
+
+<span class="c"># the writer sees the finding, never the researcher's private note</span>
+<span class="f">print</span>([h[<span class="s">"record"</span>][<span class="s">"text"</span>] <span class="k">for</span> h <span class="k">in</span> writer.<span class="f">recall</span>(<span class="s">"infra spend"</span>)])</pre>
+</div>
+
+<div class="note ok">
+  <span class="lbl">How it is enforced</span>
+  <p>The visibility rule runs in the pre-filter <em>inside</em> each index
+  search, not as a filter over the result list. A private memory cannot leak
+  through ranking, through a widened <code>ef_search</code>, or through the
+  graph's one-hop expansion — it is never a candidate in the first place.</p>
+</div>
+
+<p>
+  <code>as_agent</code> and <code>filter.agent_id</code> are different things:
+  <code>as_agent</code> sets <em>who is asking</em>, while
+  <code>filter.agent_id</code> narrows to exactly one agent's records within
+  what the asker may already see. Omitting <code>as_agent</code> is an unscoped
+  operator view that sees everything.
+</p>
+
+<!-- ================================================================= -->
+<h2 id="api">HTTP API</h2>
+
+<p>
+  All endpoints are under <code>/v1</code>, take and return JSON, and use
+  <code>POST</code> unless noted. Two headers matter:
+</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Header</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>X-Memrust-Namespace</code></td><td>Selects the namespace. Omitted means <code>default</code>.</td></tr>
+    <tr><td><code>Authorization: Bearer &lt;key&gt;</code></td><td>Required when the server was started with <code>--api-key</code>. <code>X-API-Key</code> also works.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- --------------------------------------------------------------- -->
+<div class="ep" id="api-remember"><span class="verb">POST</span><span class="path">/v1/remember</span><span class="what">store one memory</span></div>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Field</th><th>Type</th><th>Default</th></tr></thead>
+  <tbody>
+    <tr><td><code>text</code> <strong>required</strong></td><td>string</td><td>—</td></tr>
+    <tr><td><code>kind</code></td><td>enum</td><td><code>episodic</code></td></tr>
+    <tr><td><code>tags</code></td><td>string[]</td><td><code>[]</code></td></tr>
+    <tr><td><code>importance</code></td><td>0.0–1.0</td><td><code>0.5</code></td></tr>
+    <tr><td><code>ttl_seconds</code></td><td>int</td><td>1 day for <code>working</code>, none otherwise</td></tr>
+    <tr><td><code>session_id</code></td><td>string</td><td>null</td></tr>
+    <tr><td><code>agent_id</code></td><td>string</td><td>null</td></tr>
+    <tr><td><code>visibility</code></td><td><code>shared</code>|<code>private</code></td><td><code>private</code> if <code>agent_id</code> set, else <code>shared</code></td></tr>
+    <tr><td><code>metadata</code></td><td>any json</td><td>null</td></tr>
+    <tr><td><code>embedding</code></td><td>float[]</td><td>engine embeds the text</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="cb">
+  <div class="cb-head">response<button class="copy">copy</button></div>
+<pre>{
+  <span class="s">"record"</span>: {
+    <span class="s">"id"</span>: <span class="s">"15a16ce6-0bfa-4c12-b6a4-b1e106949991"</span>,
+    <span class="s">"kind"</span>: <span class="s">"episodic"</span>,
+    <span class="s">"text"</span>: <span class="s">"Dana Whitfield escalated INC-90312…"</span>,
+    <span class="s">"created_at"</span>: 1785304573485,
+    <span class="s">"importance"</span>: 0.8,
+    <span class="s">"entities"</span>: [<span class="s">"incident"</span>, <span class="s">"checkout"</span>, <span class="s">"dana whitfield"</span>, <span class="s">"inc-90312"</span>, <span class="s">"900ms"</span>, <span class="s">"redis"</span>],
+    <span class="s">"tags"</span>: [<span class="s">"incident"</span>, <span class="s">"checkout"</span>],
+    <span class="s">"visibility"</span>: <span class="s">"shared"</span>
+  }
+}</pre>
+</div>
+
+<p>
+  The embedding is never returned — it is an internal representation, and
+  echoing a few hundred floats per record on every response is waste.
+</p>
+
+<!-- --------------------------------------------------------------- -->
+<div class="ep" id="api-batch"><span class="verb">POST</span><span class="path">/v1/remember_batch</span><span class="what">bulk ingest</span></div>
+
+<p>
+  Takes <code>{"items": [ …remember bodies… ]}</code> and returns
+  <code>{"records": [...]}</code>. Use it for anything over a handful of writes:
+  the whole batch is <strong>one embedding round-trip and one fsync</strong>,
+  which is usually an order of magnitude faster than the same writes serially.
+</p>
+
+<div class="cb">
+  <div class="cb-head">python<button class="copy">copy</button></div>
+<pre>memory.<span class="f">remember_batch</span>([
+    {<span class="s">"text"</span>: <span class="s">"The team capped the Redis connection pool at 64."</span>, <span class="s">"kind"</span>: <span class="s">"semantic"</span>},
+    {<span class="s">"text"</span>: <span class="s">"Rollback: scale checkout to 0, flip the flag, redeploy."</span>, <span class="s">"kind"</span>: <span class="s">"procedural"</span>},
+    {<span class="s">"text"</span>: <span class="s">"User prefers terse answers with code first."</span>, <span class="s">"kind"</span>: <span class="s">"semantic"</span>},
+])</pre>
+</div>
+
+<!-- --------------------------------------------------------------- -->
+<div class="ep" id="api-recall"><span class="verb">POST</span><span class="path">/v1/recall</span><span class="what">hybrid retrieval</span></div>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td><code>query</code> <strong>required</strong></td><td>string</td><td>Natural language, an identifier, or both.</td></tr>
+    <tr><td><code>top_k</code></td><td>int</td><td>Default 10.</td></tr>
+    <tr><td><code>strategy</code></td><td>enum</td><td>See <a href="#strategies">strategies</a>.</td></tr>
+    <tr><td><code>as_agent</code></td><td>string</td><td>Recall on behalf of this agent. Omit for the unscoped view.</td></tr>
+    <tr><td><code>filter.kinds</code></td><td>enum[]</td><td>Any-of.</td></tr>
+    <tr><td><code>filter.tags</code></td><td>string[]</td><td><strong>All-of</strong>, not any-of.</td></tr>
+    <tr><td><code>filter.session_id</code></td><td>string</td><td>Exact match.</td></tr>
+    <tr><td><code>filter.agent_id</code></td><td>string</td><td>Exact match, within the visible set.</td></tr>
+    <tr><td><code>filter.since</code> / <code>until</code></td><td>i64</td><td>Unix ms, inclusive.</td></tr>
+    <tr><td><code>ef_search</code></td><td>int</td><td>HNSW beam width for this query. Higher = more accurate, slower. Default 100.</td></tr>
+    <tr><td><code>rerank</code></td><td>bool</td><td>Set <code>false</code> to skip a configured reranker for this call.</td></tr>
+    <tr><td><code>query_embedding</code></td><td>float[]</td><td>Bring your own query vector. Must match the collection's dimension.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="cb">
+  <div class="cb-head">shell · a filtered, agent-scoped recall<button class="copy">copy</button></div>
+<pre>curl -s localhost:7700/v1/recall -H <span class="s">'content-type: application/json'</span> -d <span class="s">'{
+  "query": "what broke in checkout?",
+  "top_k": 5,
+  "strategy": "recent",
+  "as_agent": "triage-bot",
+  "filter": {
+    "kinds": ["episodic", "tool_call"],
+    "tags": ["incident"],
+    "since": 1785000000000
+  }
+}'</span></pre>
+</div>
+
+<div class="note warn">
+  <span class="lbl">Filters are pre-filters</span>
+  <p>They run inside each index search, not over the results. So
+  <code>top_k: 5</code> with a narrow filter returns the best 5 <em>matching</em>
+  memories — not “the best 5 overall, then filtered down to 2”.</p>
+</div>
+
+<!-- --------------------------------------------------------------- -->
+<div class="ep" id="api-forget"><span class="verb">POST</span><span class="path">/v1/forget</span><span class="what">delete one memory</span></div>
+
+<p>
+  <code>{"id": "&lt;uuid&gt;"}</code> → <code>{"forgotten": true}</code>. Durable
+  immediately: the deletion is appended to the WAL and fsynced before the
+  response, and the record is removed from all four indexes.
+</p>
+
+<!-- --------------------------------------------------------------- -->
+<div class="ep" id="api-list"><span class="verb get">GET</span><span class="path">/v1/memories</span><span class="what">browse</span></div>
+
+<p>
+  <code>?offset=0&amp;limit=50</code> → <code>{"records": [...], "total": 128}</code>,
+  newest first. This is a listing, not a search — no ranking, no filters. Use it
+  for dashboards and exports.
+</p>
+
+<div class="ep"><span class="verb get">GET</span><span class="path">/v1/entities</span><span class="what">what this store is about</span></div>
+
+<div class="cb">
+  <div class="cb-head">GET /v1/entities?limit=5<button class="copy">copy</button></div>
+<pre>{<span class="s">"entities"</span>: [
+  {<span class="s">"name"</span>: <span class="s">"redis"</span>,          <span class="s">"count"</span>: 2},
+  {<span class="s">"name"</span>: <span class="s">"900ms"</span>,          <span class="s">"count"</span>: 1},
+  {<span class="s">"name"</span>: <span class="s">"checkout"</span>,       <span class="s">"count"</span>: 1},
+  {<span class="s">"name"</span>: <span class="s">"dana whitfield"</span>, <span class="s">"count"</span>: 1}
+]}</pre>
+</div>
+
+<p>
+  Frequency-ordered. A fast way to see what a memory store has actually
+  accumulated — and a good sanity check that your writes carry the identifiers
+  you think they do.
+</p>
+
+<!-- --------------------------------------------------------------- -->
+<div class="ep" id="api-lifecycle"><span class="verb">POST</span><span class="path">/v1/lifecycle/run</span><span class="what">sweep &amp; consolidate now</span></div>
+
+<div class="cb">
+  <div class="cb-head">response<button class="copy">copy</button></div>
+<pre>{<span class="s">"report"</span>: {
+  <span class="s">"expired_swept"</span>: 3,          <span class="c">// TTL'd memories durably deleted</span>
+  <span class="s">"batches_consolidated"</span>: 1,   <span class="c">// episodic groups folded into summaries</span>
+  <span class="s">"summaries"</span>: [<span class="s">"9f0e…"</span>],       <span class="c">// ids of the new semantic memories</span>
+  <span class="s">"checkpointed"</span>: false
+}}</pre>
+</div>
+
+<p>
+  Runs automatically every 300s. Call it directly in tests, or after a bulk
+  import, when you don't want to wait.
+</p>
+
+<div class="ep"><span class="verb">POST</span><span class="path">/v1/checkpoint</span><span class="what">persist and truncate the WAL</span></div>
+
+<!-- --------------------------------------------------------------- -->
+<div class="ep" id="api-snapshot"><span class="verb">POST</span><span class="path">/v1/snapshot</span><span class="what">export</span></div>
+
+<p>
+  <code>{"session_id": "…"}</code> (optional) → a portable
+  <code>{"snapshot": {created_at, session_id, records}}</code>. Snapshot records
+  <strong>do</strong> include embeddings, so a restore does not re-embed and
+  does not need the original embedding provider.
+</p>
+
+<div class="ep"><span class="verb">POST</span><span class="path">/v1/restore</span><span class="what">import</span></div>
+
+<p>
+  <code>{"records": [...]}</code> → <code>{"restored": 42}</code>. Id-preserving
+  and idempotent — restoring the same snapshot twice does not duplicate. This is
+  how you move a conversation's memory between machines, or seed a new
+  namespace.
+</p>
+
+<!-- --------------------------------------------------------------- -->
+<div class="ep" id="api-admin"><span class="verb get">GET</span><span class="path">/v1/namespaces</span><span class="what">admin</span></div>
+<div class="ep"><span class="verb">POST</span><span class="path">/v1/namespaces/drop</span><span class="what">irreversible</span></div>
+<div class="ep"><span class="verb get">GET</span><span class="path">/health</span><span class="what">stats</span></div>
+<div class="ep"><span class="verb get">GET</span><span class="path">/healthz</span><span class="what">liveness — returns "ok"</span></div>
+<div class="ep"><span class="verb get">GET</span><span class="path">/metrics</span><span class="what">Prometheus</span></div>
+
+<div class="cb">
+  <div class="cb-head">GET /health<button class="copy">copy</button></div>
+<pre>{
+  <span class="s">"namespace"</span>: <span class="s">"default"</span>,
+  <span class="s">"status"</span>: <span class="s">"ok"</span>,
+  <span class="s">"stats"</span>: {
+    <span class="s">"total_memories"</span>: 4,
+    <span class="s">"vector_indexed"</span>: 4,
+    <span class="s">"lexical_indexed"</span>: 4,
+    <span class="s">"entities"</span>: 6,
+    <span class="s">"embedding_dim"</span>: 256,     <span class="c">// the engine's embedder</span>
+    <span class="s">"vector_dim"</span>: 256,        <span class="c">// the index — set by the first vector stored</span>
+    <span class="s">"quantized"</span>: false,
+    <span class="s">"wal_tail_ops"</span>: 1         <span class="c">// ops a restart would replay</span>
+  }
+}</pre>
+</div>
+
+<div class="note warn">
+  <span class="lbl">Admin endpoints are not tenant-safe</span>
+  <p><code>/v1/namespaces</code>, <code>/v1/namespaces/drop</code> and
+  <code>/metrics</code> name every namespace on the server. When you use scoped
+  API keys they require an <em>unscoped</em> key. Never expose them through a
+  multi-tenant proxy.</p>
+</div>
+
+<!-- ================================================================= -->
+<h2 id="errors">Errors</h2>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Status</th><th>Means</th><th>Usually</th></tr></thead>
+  <tbody>
+    <tr><td><code>401</code></td><td>Missing or wrong key</td><td>Server started with <code>--api-key</code>; send <code>Authorization: Bearer</code>.</td></tr>
+    <tr><td><code>403</code></td><td>Key not scoped to this namespace</td><td>A scoped key reaching a namespace outside its list, or an admin route.</td></tr>
+    <tr><td><code>413</code></td><td>Body too large</td><td>Split the batch. Bring-your-own embeddings make bodies big fast.</td></tr>
+    <tr><td><code>422</code></td><td>Body did not deserialize</td><td>The message names the field: <code>missing field `query`</code>.</td></tr>
+    <tr><td><code>500</code></td><td>Engine error</td><td>Dimension mismatch, disk full, embedding provider unreachable.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Errors are plain-text bodies with the reason, not a JSON error envelope. They
+  are meant to be read in a terminal.
+</p>
+
+<!-- ================================================================= -->
+<h2 id="mcp">MCP — the Model Context Protocol</h2>
+
+<p>
+  MCP is how memrust becomes memory for tools you did not write. memrust speaks
+  it two ways.
+</p>
+
+<h3>stdio — local</h3>
+
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre>memrust mcp --data-dir ~/.memrust --agent-id planner</pre>
+</div>
+
+<p>
+  The process owns the data directory directly — no server, no port, no
+  network. Best for a single machine.
+</p>
+
+<h3>HTTP — hosted</h3>
+
+<p>
+  The hosted control plane exposes the same JSON-RPC at <code>POST /mcp</code>,
+  so several machines and several people connect to one memory. That is in
+  <a href="../#hosted">private beta</a>.
+</p>
+
+<h3>Tools</h3>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Tool</th><th>Arguments</th></tr></thead>
+  <tbody>
+    <tr><td><code>memory_remember</code></td><td><code>text</code>, <code>kind</code>, <code>tags</code>, <code>importance</code></td></tr>
+    <tr><td><code>memory_recall</code></td><td><code>query</code>, <code>top_k</code>, <code>strategy</code></td></tr>
+    <tr><td><code>memory_forget</code></td><td><code>id</code></td></tr>
+    <tr><td><code>memory_entities</code> <em>(HTTP transport)</em></td><td><code>limit</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Recall returns the per-signal breakdown in the text block, so the model can
+  weigh a strong semantic match against a lucky keyword hit rather than
+  trusting a rank order it cannot inspect.
+</p>
+
+<!-- ----------------------------------------------------------------- -->
+<h2 id="claude-code">Claude Code &amp; Claude Desktop</h2>
+
+<div class="tabs" role="tablist" aria-label="Claude client">
+  <button class="tab" role="tab" aria-selected="true" aria-controls="c-code" id="tc-code">claude code</button>
+  <button class="tab" role="tab" aria-selected="false" aria-controls="c-desk" id="tc-desk">claude desktop</button>
+  <button class="tab" role="tab" aria-selected="false" aria-controls="c-http" id="tc-http">hosted</button>
+</div>
+
+<div role="tabpanel" id="c-code" aria-labelledby="tc-code">
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre>claude mcp add memory -- memrust mcp --data-dir ~/.memrust --agent-id claude-code
+
+<span class="c"># verify</span>
+claude mcp list</pre>
+</div>
+</div>
+
+<div role="tabpanel" id="c-desk" aria-labelledby="tc-desk" hidden>
+<div class="cb">
+  <div class="cb-head">claude_desktop_config.json<button class="copy">copy</button></div>
+<pre>{
+  <span class="s">"mcpServers"</span>: {
+    <span class="s">"memrust"</span>: {
+      <span class="s">"command"</span>: <span class="s">"memrust"</span>,
+      <span class="s">"args"</span>: [<span class="s">"mcp"</span>, <span class="s">"--data-dir"</span>, <span class="s">"/Users/you/.memrust"</span>]
+    }
+  }
+}</pre>
+</div>
+</div>
+
+<div role="tabpanel" id="c-http" aria-labelledby="tc-http" hidden>
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre>claude mcp add --transport http memrust https://your-host/mcp \
+  --header <span class="s">"Authorization: Bearer mr_live_…"</span></pre>
+</div>
+</div>
+
+<p>
+  Point <strong>the same <code>--data-dir</code></strong> at several clients and
+  they share one memory. That is the whole trick: what Claude Code learns while
+  fixing a bug, Claude Desktop recalls the next morning.
+</p>
+
+<div class="note">
+  <span class="lbl">Getting the model to actually use it</span>
+  <p>Tools exist but models need a reason to reach for them. Put one line in
+  your <code>CLAUDE.md</code> or system prompt: <em>“Call memory_recall before
+  answering anything that depends on earlier context, and memory_remember
+  whenever you learn a durable fact, decision or preference.”</em> Recall
+  quality is not the bottleneck early on — recall <em>frequency</em> is.</p>
+</div>
+
+<!-- ----------------------------------------------------------------- -->
+<h2 id="cursor">Cursor, Windsurf, Codex</h2>
+
+<p>
+  Any MCP client works; only the config file location differs. All of them take
+  the standard <code>mcpServers</code> block:
+</p>
+
+<div class="cb">
+  <div class="cb-head">.cursor/mcp.json · ~/.codeium/windsurf/mcp_config.json<button class="copy">copy</button></div>
+<pre>{
+  <span class="s">"mcpServers"</span>: {
+    <span class="s">"memrust"</span>: {
+      <span class="s">"command"</span>: <span class="s">"memrust"</span>,
+      <span class="s">"args"</span>: [<span class="s">"mcp"</span>, <span class="s">"--data-dir"</span>, <span class="s">"/absolute/path/.memrust"</span>,
+               <span class="s">"--agent-id"</span>, <span class="s">"cursor"</span>]
+    }
+  }
+}</pre>
+</div>
+
+<p>
+  Use an absolute path — MCP clients do not launch the process in your project
+  directory, and a relative path will quietly create an empty store somewhere
+  surprising. Give each client a distinct <code>--agent-id</code> if you want to
+  tell later who learned what; leave it off if you want everything pooled.
+</p>
+
+<!-- ----------------------------------------------------------------- -->
+<h2 id="langgraph">LangGraph</h2>
+
+<p>
+  Memory is a node. Recall before the model call, remember after it — the graph
+  state stays small and the memory store carries what persists across runs.
+</p>
+
+<div class="cb">
+  <div class="cb-head">python<button class="copy">copy</button></div>
+<pre><span class="k">from</span> langgraph.graph <span class="k">import</span> StateGraph, START, END
+<span class="k">from</span> memrust <span class="k">import</span> MemrustClient
+
+memory = <span class="f">MemrustClient</span>(<span class="s">"http://127.0.0.1:7700"</span>, agent_id=<span class="s">"support-agent"</span>)
+
+
+<span class="k">def</span> <span class="f">load_memory</span>(state):
+    <span class="s">"""Recall before the model sees the question."""</span>
+    hits = memory.<span class="f">recall</span>(state[<span class="s">"question"</span>], top_k=<span class="n">5</span>)
+    context = <span class="s">"\n"</span>.<span class="f">join</span>(<span class="s">f"- {h['record']['text']}"</span> <span class="k">for</span> h <span class="k">in</span> hits)
+    <span class="k">return</span> {<span class="s">"context"</span>: context}
+
+
+<span class="k">def</span> <span class="f">answer</span>(state):
+    prompt = <span class="s">f"What we already know:\n{state['context']}\n\nQ: {state['question']}"</span>
+    <span class="k">return</span> {<span class="s">"answer"</span>: llm.<span class="f">invoke</span>(prompt).content}
+
+
+<span class="k">def</span> <span class="f">save_memory</span>(state):
+    <span class="s">"""Store the outcome, not the transcript."""</span>
+    memory.<span class="f">remember</span>(
+        <span class="s">f"Q: {state['question']} → {state['answer']}"</span>,
+        kind=<span class="s">"episodic"</span>,
+        session_id=state[<span class="s">"thread_id"</span>],
+    )
+    <span class="k">return</span> {}
+
+
+g = <span class="f">StateGraph</span>(dict)
+g.<span class="f">add_node</span>(<span class="s">"load"</span>, load_memory)
+g.<span class="f">add_node</span>(<span class="s">"answer"</span>, answer)
+g.<span class="f">add_node</span>(<span class="s">"save"</span>, save_memory)
+g.<span class="f">add_edge</span>(START, <span class="s">"load"</span>)
+g.<span class="f">add_edge</span>(<span class="s">"load"</span>, <span class="s">"answer"</span>)
+g.<span class="f">add_edge</span>(<span class="s">"answer"</span>, <span class="s">"save"</span>)
+g.<span class="f">add_edge</span>(<span class="s">"save"</span>, END)
+
+app = g.<span class="f">compile</span>()</pre>
+</div>
+
+<div class="note">
+  <span class="lbl">Checkpointer vs. memory</span>
+  <p>LangGraph's checkpointer persists <em>graph state</em> so a run can resume.
+  memrust persists <em>what was learned</em> so the next run starts smarter.
+  They are complementary; keep both.</p>
+</div>
+
+<!-- ----------------------------------------------------------------- -->
+<h2 id="crewai">CrewAI</h2>
+
+<p>
+  Give each crew member its own client. Private notes stay private, findings get
+  published — with no coordination code between the agents.
+</p>
+
+<div class="cb">
+  <div class="cb-head">python<button class="copy">copy</button></div>
+<pre><span class="k">from</span> crewai <span class="k">import</span> Agent, Task, Crew
+<span class="k">from</span> crewai.tools <span class="k">import</span> tool
+<span class="k">from</span> memrust <span class="k">import</span> MemrustClient
+
+URL = <span class="s">"http://127.0.0.1:7700"</span>
+researcher_mem = <span class="f">MemrustClient</span>(URL, agent_id=<span class="s">"researcher"</span>)
+writer_mem     = <span class="f">MemrustClient</span>(URL, agent_id=<span class="s">"writer"</span>)
+
+
+<span class="f">@tool</span>(<span class="s">"remember"</span>)
+<span class="k">def</span> <span class="f">remember</span>(text: str, shared: bool = <span class="k">False</span>) -&gt; str:
+    <span class="s">"""Store a finding. shared=True publishes it to the whole crew."""</span>
+    rec = researcher_mem.<span class="f">remember</span>(
+        text, kind=<span class="s">"semantic"</span>,
+        visibility=<span class="s">"shared"</span> <span class="k">if</span> shared <span class="k">else</span> <span class="s">"private"</span>,
+    )
+    <span class="k">return</span> rec[<span class="s">"id"</span>]
+
+
+<span class="f">@tool</span>(<span class="s">"recall"</span>)
+<span class="k">def</span> <span class="f">recall</span>(query: str) -&gt; str:
+    <span class="s">"""Search the crew's shared memory."""</span>
+    hits = writer_mem.<span class="f">recall</span>(query, top_k=<span class="n">5</span>)
+    <span class="k">return</span> <span class="s">"\n"</span>.<span class="f">join</span>(h[<span class="s">"record"</span>][<span class="s">"text"</span>] <span class="k">for</span> h <span class="k">in</span> hits)
+
+
+researcher = <span class="f">Agent</span>(role=<span class="s">"Researcher"</span>, goal=<span class="s">"Find and record facts"</span>,
+                    tools=[remember], backstory=<span class="s">"…"</span>)
+writer     = <span class="f">Agent</span>(role=<span class="s">"Writer"</span>, goal=<span class="s">"Write from what the crew knows"</span>,
+                    tools=[recall], backstory=<span class="s">"…"</span>)
+
+crew = <span class="f">Crew</span>(agents=[researcher, writer], tasks=[…])</pre>
+</div>
+
+<p>
+  The crew's memory outlives the crew. Run it again next week and the writer
+  starts with everything the researcher established, without re-running the
+  research.
+</p>
+
+<!-- ----------------------------------------------------------------- -->
+<h2 id="openai-loop">A plain LLM loop</h2>
+
+<p>
+  No framework. This is the whole pattern, and it is worth seeing how small it
+  is:
+</p>
+
+<div class="cb">
+  <div class="cb-head">python<button class="copy">copy</button></div>
+<pre><span class="k">from</span> openai <span class="k">import</span> OpenAI
+<span class="k">from</span> memrust <span class="k">import</span> MemrustClient
+
+llm = <span class="f">OpenAI</span>()
+memory = <span class="f">MemrustClient</span>(<span class="s">"http://127.0.0.1:7700"</span>)
+
+
+<span class="k">def</span> <span class="f">chat</span>(question: str, session: str) -&gt; str:
+    <span class="c"># 1. recall — hybrid, so identifiers survive</span>
+    hits = memory.<span class="f">recall</span>(question, top_k=<span class="n">6</span>)
+    known = <span class="s">"\n"</span>.<span class="f">join</span>(<span class="s">f"- {h['record']['text']}"</span> <span class="k">for</span> h <span class="k">in</span> hits)
+
+    <span class="c"># 2. answer, grounded in it</span>
+    reply = llm.chat.completions.<span class="f">create</span>(
+        model=<span class="s">"gpt-4o-mini"</span>,
+        messages=[
+            {<span class="s">"role"</span>: <span class="s">"system"</span>, <span class="s">"content"</span>: <span class="s">f"What you already know:\n{known}"</span>},
+            {<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: question},
+        ],
+    ).choices[<span class="n">0</span>].message.content
+
+    <span class="c"># 3. remember the outcome — not the transcript</span>
+    memory.<span class="f">remember</span>(<span class="s">f"Q: {question} → {reply[:280]}"</span>, session_id=session)
+    <span class="k">return</span> reply</pre>
+</div>
+
+<p>
+  Note step 3. Storing every raw turn is the most common mistake — it fills the
+  store with “ok”, “thanks” and “try again”, all of which compete for retrieval
+  slots forever. Store conclusions.
+</p>
+
+<!-- ================================================================= -->
+<h2 id="embeddings">Embeddings</h2>
+
+<p>
+  memrust ships an offline embedder so nothing blocks the first run, and takes a
+  real one whenever you want quality.
+</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Option</th><th>Flag</th><th>When</th></tr></thead>
+  <tbody>
+    <tr><td><strong>hash</strong> <em>(default)</em></td><td>—</td><td>Feature hashing, 256 dims, no network, no key. Good enough to demo and to let the lexical + graph signals carry identifier queries. Not good enough for production paraphrase.</td></tr>
+    <tr><td><strong>OpenAI</strong></td><td><code>--embedder openai</code></td><td>Default model <code>text-embedding-3-small</code>. Needs <code>OPENAI_API_KEY</code> or <code>MEMRUST_EMBED_API_KEY</code>.</td></tr>
+    <tr><td><strong>Gemini</strong></td><td><code>--embedder gemini</code></td><td>Default <code>gemini-embedding-001</code>. Needs <code>GEMINI_API_KEY</code>.</td></tr>
+    <tr><td><strong>Local / OpenAI-compatible</strong></td><td><code>--embedder openai --embedding-url …</code></td><td>Ollama, LM Studio, HF TEI, Infinity, vLLM. No key needed.</td></tr>
+    <tr><td><strong>Bring your own</strong></td><td>—</td><td>Pass <code>embedding</code> on write and <code>query_embedding</code> on recall. The engine never calls out.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre><span class="c"># OpenAI</span>
+export OPENAI_API_KEY=sk-…
+memrust serve --embedder openai --embedding-model text-embedding-3-small
+
+<span class="c"># Ollama, entirely local</span>
+memrust serve --embedder openai \
+  --embedding-url http://localhost:11434/v1 \
+  --embedding-model nomic-embed-text
+
+<span class="c"># E5-family models want asymmetric prefixes</span>
+memrust serve --embedder openai \
+  --embedding-url http://localhost:8080/v1 \
+  --embed-query-prefix <span class="s">"query: "</span> \
+  --embed-passage-prefix <span class="s">"passage: "</span></pre>
+</div>
+
+<div class="note warn">
+  <span class="lbl">One model per namespace, forever</span>
+  <p>The vector index pins its dimension to the first vector stored. Vectors
+  from different models are not comparable, so mixing them is meaningless rather
+  than merely inaccurate — memrust refuses a mismatched dimension and logs the
+  reason. <strong>Changing embedding model means re-ingesting into a fresh
+  namespace.</strong> Check the current dimension at
+  <code>GET /health</code> → <code>stats.vector_dim</code>.</p>
+</div>
+
+<h3>Quantization</h3>
+
+<p>
+  At ≥1024 dimensions memrust automatically stores SQ8 codes — one byte per
+  dimension instead of four. At that width it is both faster than f32 (better
+  cache behaviour) and a quarter of the memory. Below 1024 it keeps f32. Force
+  either way with <code>--quantize</code> / <code>--no-quantize</code>.
+</p>
+
+<!-- ================================================================= -->
+<h2 id="capture">Capturing memories: manual, automatic, and in between</h2>
+
+<p>
+  “Do I have to write every memory by hand?” No — but be clear about which layer
+  is doing the work.
+</p>
+
+<h3>1. The model decides (MCP)</h3>
+
+<p>
+  With MCP connected, Claude calls <code>memory_remember</code> when it judges
+  something durable, and <code>memory_recall</code> before answering. You write
+  no capture code at all. This is the highest-leverage setup and the one to
+  start with. Its quality depends entirely on your system prompt — see the note
+  in <a href="#claude-code">Claude Code</a>.
+</p>
+
+<h3>2. Your code decides (a wrapper)</h3>
+
+<p>
+  Deterministic, cheap, and what most production systems end up doing: wrap the
+  agent turn and store the outcome, as in the <a href="#openai-loop">plain
+  loop</a> above. Add a filter so trivia never lands:
+</p>
+
+<div class="cb">
+  <div class="cb-head">python<button class="copy">copy</button></div>
+<pre>SKIP = {<span class="s">"ok"</span>, <span class="s">"thanks"</span>, <span class="s">"yes"</span>, <span class="s">"no"</span>, <span class="s">"try again"</span>, <span class="s">"continue"</span>}
+
+<span class="k">def</span> <span class="f">maybe_remember</span>(text, **kw):
+    <span class="s">"""Store only what could matter tomorrow."""</span>
+    <span class="k">if</span> <span class="f">len</span>(text) &lt; <span class="n">25</span> <span class="k">or</span> text.<span class="f">strip</span>().<span class="f">lower</span>() <span class="k">in</span> SKIP:
+        <span class="k">return None</span>
+    <span class="k">return</span> memory.<span class="f">remember</span>(text, **kw)</pre>
+</div>
+
+<h3>3. An LLM decides (extraction pass)</h3>
+
+<p>
+  Run a cheap model over each turn and ask it for durable facts only. Store the
+  output as <code>semantic</code>. This gives the best signal-to-noise ratio and
+  costs one small call per turn.
+</p>
+
+<div class="cb">
+  <div class="cb-head">python<button class="copy">copy</button></div>
+<pre>EXTRACT = (
+    <span class="s">"Extract durable facts, decisions and preferences from this exchange. "</span>
+    <span class="s">"One per line, third person, keep names, numbers and identifiers. "</span>
+    <span class="s">"Output nothing if there are none."</span>
+)
+
+<span class="k">def</span> <span class="f">distil</span>(exchange: str, session: str):
+    out = llm.chat.completions.<span class="f">create</span>(
+        model=<span class="s">"gpt-4o-mini"</span>,
+        messages=[{<span class="s">"role"</span>: <span class="s">"system"</span>, <span class="s">"content"</span>: EXTRACT},
+                  {<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: exchange}],
+    ).choices[<span class="n">0</span>].message.content.<span class="f">strip</span>()
+
+    facts = [l.<span class="f">lstrip</span>(<span class="s">"- "</span>) <span class="k">for</span> l <span class="k">in</span> out.<span class="f">splitlines</span>() <span class="k">if</span> l.<span class="f">strip</span>()]
+    <span class="k">if</span> facts:
+        memory.<span class="f">remember_batch</span>(
+            [{<span class="s">"text"</span>: f, <span class="s">"kind"</span>: <span class="s">"semantic"</span>, <span class="s">"session_id"</span>: session} <span class="k">for</span> f <span class="k">in</span> facts]
+        )</pre>
+</div>
+
+<h3>What memrust automates for you</h3>
+
+<p>Regardless of which you choose, once text arrives the engine does the rest:</p>
+
+<ul>
+  <li>Embeds it, indexes it for BM25, extracts entities and links them in the graph.</li>
+  <li>Applies a default TTL to <code>working</code> memories.</li>
+  <li>Every 300s: sweeps expired memories and folds 7-day-old episodic batches
+      into <code>semantic</code> summaries, recording provenance in
+      <code>sources</code>.</li>
+</ul>
+
+<div class="note">
+  <span class="lbl">The honest gap</span>
+  <p>There is no “point memrust at your Slack and it learns.” Deciding what is
+  worth remembering is a judgement call, made by a model or by your code. That
+  is deliberate: automatic capture of everything is exactly how a memory store
+  becomes landfill that retrieval then has to fight through.</p>
+</div>
+
+<!-- ================================================================= -->
+<h2 id="rag">Using memrust for plain RAG</h2>
+
+<p>Yes, it works. Map the concepts and go:</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Vector DB concept</th><th>memrust</th></tr></thead>
+  <tbody>
+    <tr><td>Collection</td><td>Namespace</td></tr>
+    <tr><td>Upsert</td><td><code>POST /v1/remember_batch</code></td></tr>
+    <tr><td>Search</td><td><code>POST /v1/recall</code></td></tr>
+    <tr><td>Payload</td><td><code>metadata</code> (returned, not queryable) + <code>tags</code> (queryable)</td></tr>
+    <tr><td>Delete by id</td><td><code>POST /v1/forget</code></td></tr>
+    <tr><td>Hybrid search</td><td>On by default. Not a separate index to configure.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="cb">
+  <div class="cb-head">python · document RAG<button class="copy">copy</button></div>
+<pre>memory = <span class="f">MemrustClient</span>(URL, namespace=<span class="s">"handbook"</span>)
+
+<span class="c"># ingest chunks — tags are your filterable payload</span>
+memory.<span class="f">remember_batch</span>([
+    {<span class="s">"text"</span>: chunk,
+     <span class="s">"kind"</span>: <span class="s">"semantic"</span>,
+     <span class="s">"tags"</span>: [<span class="s">"handbook"</span>, <span class="s">f"page-{page}"</span>],
+     <span class="s">"metadata"</span>: {<span class="s">"source"</span>: path, <span class="s">"page"</span>: page}}
+    <span class="k">for</span> chunk, page <span class="k">in</span> chunks
+])
+
+<span class="c"># retrieve — hybrid, so "clause 7.3" and "what is the refund policy"</span>
+<span class="c"># both work against the same store</span>
+hits = memory.<span class="f">recall</span>(question, top_k=<span class="n">8</span>, tags=[<span class="s">"handbook"</span>])</pre>
+</div>
+
+<h4>Where memrust is the better choice</h4>
+<ul>
+  <li>Your corpus is full of identifiers — SKUs, clause numbers, error codes,
+      part numbers, ticket IDs. The lexical and graph signals are free and they
+      are exactly what pure vector search misses.</li>
+  <li>You want one binary instead of a vector database plus a keyword engine
+      plus glue to fuse them.</li>
+  <li>You want to see <em>why</em> a chunk was retrieved.</li>
+</ul>
+
+<h4>Where a dedicated vector database is still the better choice</h4>
+<ul>
+  <li><strong>Distributed scale.</strong> memrust is single-node. Hundreds of
+      millions of vectors across a cluster is Qdrant/Milvus territory.</li>
+  <li><strong>Rich metadata filtering.</strong> memrust filters on kinds, tags,
+      session, agent and time — not arbitrary JSON predicates, ranges over
+      custom fields, or geo.</li>
+  <li><strong>Sparse or multi-vector retrieval</strong> (SPLADE, ColBERT).</li>
+</ul>
+
+<div class="note">
+  <span class="lbl">The honest framing</span>
+  <p>For pure document RAG, memrust is a reasonable single-binary option — not
+  obviously better than Qdrant. Where nothing else fits is when your agent needs
+  to remember <em>across sessions</em>: typed memories, ownership, visibility,
+  expiry, consolidation. That is not RAG, and a vector store has no answer for
+  it.</p>
+</div>
+
+<!-- ================================================================= -->
+<h2 id="lifecycle">Lifecycle &amp; consolidation</h2>
+
+<p>
+  Memory that only grows becomes unusable. A background pass runs every 300
+  seconds and does two things.
+</p>
+
+<h3>Expiry</h3>
+<p>
+  Memories past <code>expires_at</code> are invisible to recall immediately and
+  durably deleted on the next sweep. <code>working</code> memories get a 1-day
+  TTL automatically; set <code>ttl_seconds</code> on anything else you want to
+  be temporary.
+</p>
+
+<h3>Consolidation</h3>
+<p>
+  Episodic memories older than 7 days are grouped and distilled into a single
+  <code>semantic</code> memory. The sources are forgotten in the same pass, and
+  the summary records their ids in <code>sources</code> — so provenance survives
+  even though the raw episodes do not. Batches are 4–12 memories: below 4 there
+  is not enough context to distil, above 12 the summary loses specifics.
+</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Summarizer</th><th>Flag</th><th>Behaviour</th></tr></thead>
+  <tbody>
+    <tr><td><strong>extractive</strong> <em>(default)</em></td><td><code>--summarizer extract</code></td><td>Picks the most lexically-central memories within a character budget. Deterministic, free, <strong>cannot hallucinate</strong> — it only ever selects text you already stored.</td></tr>
+    <tr><td><strong>LLM</strong></td><td><code>--summarizer openai</code></td><td>Genuine 2–4 sentence abstraction preserving names, numbers and decisions. Better output; can hallucinate; costs money.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="cb">
+  <div class="cb-head">shell · tuning<button class="copy">copy</button></div>
+<pre>memrust serve \
+  --lifecycle-interval-secs 300 \    <span class="c"># 0 disables the pass entirely</span>
+  --working-ttl-secs 86400 \         <span class="c"># 1 day</span>
+  --consolidate-after-secs 604800 \  <span class="c"># 7 days</span>
+  --summarizer openai --summarizer-model gpt-4o-mini</pre>
+</div>
+
+<div class="note warn">
+  <span class="lbl">Consolidation is lossy on purpose</span>
+  <p>The source episodes are deleted. If you need the raw record permanently —
+  audit, compliance, legal — either store it as <code>semantic</code> (never
+  consolidated), keep periodic <a href="#api-snapshot">snapshots</a>, or set
+  <code>--consolidate-after-secs 0</code> to turn consolidation off.</p>
+</div>
+
+<!-- ================================================================= -->
+<h2 id="tuning">Tuning recall</h2>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Symptom</th><th>Try</th></tr></thead>
+  <tbody>
+    <tr><td>Misses an exact identifier</td><td><code>strategy: "lexical"</code>. If it still misses, the identifier is probably being split by tokenization — check <code>GET /v1/entities</code> to see whether it was extracted at all.</td></tr>
+    <tr><td>Returns stale decisions</td><td><code>strategy: "recent"</code>, or <code>filter.since</code>. Consider raising <code>importance</code> on decisions.</td></tr>
+    <tr><td>Misses paraphrase</td><td>You are on the default hash embedder. Switch to a real one — this is the single biggest quality jump available.</td></tr>
+    <tr><td>Right topic, wrong specifics</td><td>Raise <code>top_k</code> and let the model choose; or enable a reranker.</td></tr>
+    <tr><td>Recall too slow</td><td>Lower <code>ef_search</code> (default 100). Check whether a remote embedding call dominates — that is usually the real latency.</td></tr>
+    <tr><td>Recall not accurate enough</td><td>Raise <code>ef_search</code> to 200–400 for that query only. It is per-request; you do not have to rebuild anything.</td></tr>
+    <tr><td>Everything scores about the same</td><td>Your memories are too long. One fact per memory retrieves far better than one paragraph per memory.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Reranking</h3>
+
+<p>
+  An optional LLM pass reorders the fused results by relevance. Hits come back
+  ordered by <code>signals.rerank</code>, while <code>score</code> still reports
+  the retrieval score — so you can see when the reranker disagreed with
+  retrieval.
+</p>
+
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre>memrust serve --reranker openai --reranker-model gpt-4o-mini
+
+<span class="c"># skip it for one latency-sensitive query</span>
+curl -s localhost:7700/v1/recall -H <span class="s">'content-type: application/json'</span> \
+  -d <span class="s">'{"query": "INC-90312", "rerank": false}'</span></pre>
+</div>
+
+<!-- ================================================================= -->
+<h2 id="deploy">Deployment</h2>
+
+<div class="cb">
+  <div class="cb-head">docker-compose.yml<button class="copy">copy</button></div>
+<pre>services:
+  memrust:
+    image: aianytime/memrust
+    command: >
+      serve --addr 0.0.0.0:7700
+      --data-dir /data
+      --api-key ${MEMRUST_API_KEY}
+      --log-format json
+    ports: [<span class="s">"7700:7700"</span>]
+    volumes: [<span class="s">"memrust-data:/data"</span>]
+    healthcheck:
+      test: [<span class="s">"CMD"</span>, <span class="s">"curl"</span>, <span class="s">"-f"</span>, <span class="s">"http://localhost:7700/healthz"</span>]
+      interval: 30s
+    restart: unless-stopped
+
+volumes:
+  memrust-data:</pre>
+</div>
+
+<div class="note warn">
+  <span class="lbl">Storage is not optional</span>
+  <p>memrust keeps a write-ahead log and a checkpoint on disk. <strong>Any
+  platform with ephemeral storage loses every memory on redeploy</strong> —
+  including several free tiers. Fine for a demo you reseed; wrong for anyone
+  real. Attach a real volume.</p>
+</div>
+
+<h3>Sizing</h3>
+<p>
+  Memory is dominated by vectors: roughly <code>dims × 4 bytes</code> per
+  memory (or <code>dims × 1</code> when quantized), plus the HNSW graph and the
+  inverted index. A million 768-dim memories is a few GB of RAM. It is a
+  single-node engine — scale by splitting namespaces across instances, not by
+  clustering one.
+</p>
+
+<!-- ================================================================= -->
+<h2 id="auth">Authentication</h2>
+
+<p>
+  With no <code>--api-key</code> the server is unauthenticated. That is fine on
+  loopback and <em>not</em> fine on a public address — memrust prints a warning
+  when you do it anyway.
+</p>
+
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre><span class="c"># one admin key, one tenant key pinned to its own namespaces</span>
+memrust serve --addr 0.0.0.0:7700 \
+  --api-key <span class="s">"$ADMIN_KEY"</span> \
+  --api-key <span class="s">"$ACME_KEY:acme,acme-staging"</span></pre>
+</div>
+
+<ul>
+  <li>An <strong>unscoped</strong> key reaches every namespace and the admin routes.</li>
+  <li>A <strong>scoped</strong> key (<code>KEY:ns1,ns2</code>) reaches only those
+      namespaces, and is refused on <code>/v1/namespaces</code>,
+      <code>/v1/namespaces/drop</code> and <code>/metrics</code> — all three
+      leak the names of namespaces the key has no business knowing about.</li>
+  <li>Keys are compared in constant time.</li>
+</ul>
+
+<div class="note warn">
+  <span class="lbl">Scoped keys are not multi-tenancy</span>
+  <p>They protect you from mistakes, not from an adversary who has a key and
+  chooses the <code>X-Memrust-Namespace</code> header. Real multi-tenancy needs
+  a proxy that pins the namespace <em>from the key</em> and never trusts the
+  caller's header — which is what the hosted control plane does.</p>
+</div>
+
+<!-- ================================================================= -->
+<h2 id="durability">Durability</h2>
+
+<p>
+  Writes are appended to a write-ahead log and <strong>fsynced before the
+  response returns</strong>. If <code>remember</code> returned 200, the memory
+  survives a power cut. Concurrent writes are group-committed, so throughput
+  does not collapse under load.
+</p>
+
+<p>
+  Recovery is checkpoint plus WAL tail: load the last checkpoint, replay
+  whatever came after. <code>stats.wal_tail_ops</code> tells you how many
+  operations a restart would replay right now.
+</p>
+
+<div class="note ok">
+  <span class="lbl">Tested, not asserted</span>
+  <p>Four concurrent writers racing a checkpoint loop, then <code>kill -9</code>:
+  1,000 acknowledged writes, 1,000 recovered. The harness is
+  <code>benches/concurrency.py</code> — run it yourself.</p>
+</div>
+
+<!-- ================================================================= -->
+<h2 id="observability">Observability</h2>
+
+<div class="cb">
+  <div class="cb-head">GET /metrics<button class="copy">copy</button></div>
+<pre># HELP memrust_uptime_seconds Seconds since the server started.
+# TYPE memrust_uptime_seconds gauge
+memrust_uptime_seconds 127.413
+# HELP memrust_build_info Build metadata; the value is always 1.
+memrust_build_info{version=<span class="s">"0.6.1"</span>} 1
+# HELP memrust_namespaces Namespaces currently open.
+memrust_namespaces 2
+# HELP memrust_memories Live memories.
+memrust_memories{namespace=<span class="s">"acme"</span>} 1</pre>
+</div>
+
+<p>
+  Request counts, latency histograms and per-namespace memory counts are all
+  exported. Request logging is one line per request:
+  <code>--log-format text|json|off</code> — use <code>json</code> anywhere logs
+  get shipped.
+</p>
+
+<!-- ================================================================= -->
+<h2 id="backup">Backup &amp; migration</h2>
+
+<p>Two approaches, for two different jobs.</p>
+
+<h4>Snapshots — portable, logical</h4>
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre><span class="c"># export everything (or one session with {"session_id": "…"})</span>
+curl -s localhost:7700/v1/snapshot -d <span class="s">'{}'</span> \
+  -H <span class="s">'content-type: application/json'</span> &gt; backup.json
+
+<span class="c"># restore anywhere — ids preserved, embeddings included, idempotent</span>
+curl -s localhost:7700/v1/restore \
+  -H <span class="s">'content-type: application/json'</span> \
+  -H <span class="s">'X-Memrust-Namespace: restored'</span> \
+  -d @&lt;(jq <span class="s">'{records: .snapshot.records}'</span> backup.json)</pre>
+</div>
+
+<h4>Directory copy — fast, exact</h4>
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre>curl -s -X POST localhost:7700/v1/checkpoint   <span class="c"># flush first</span>
+tar czf memrust-$(date +%F).tar.gz ./data</pre>
+</div>
+
+<p>
+  Snapshots survive version changes and move between machines with different
+  embedding providers. A directory copy is faster and byte-exact but tied to the
+  on-disk format. Use snapshots for migration, tarballs for backups.
+</p>
+
+<!-- ================================================================= -->
+<h2 id="cli">CLI reference</h2>
+
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre>memrust serve [--addr 127.0.0.1:7700] [--data-dir ./memrust-data] [options]
+memrust mcp   [--data-dir ./memrust-data] [--agent-id &lt;name&gt;] [options]
+memrust demo                      <span class="c"># 8 seeded memories, three recalls</span>
+memrust bench [--n 20000] [--dim 256] [--engine]</pre>
+</div>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Flag</th><th>Default</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>--addr</code></td><td><code>127.0.0.1:7700</code></td><td>Bind address. Use <code>0.0.0.0</code> in a container.</td></tr>
+    <tr><td><code>--data-dir</code></td><td><code>./memrust-data</code></td><td>WAL, checkpoint, per-namespace subdirectories.</td></tr>
+    <tr><td><code>--api-key</code></td><td>none</td><td>Repeatable. <code>KEY</code> or <code>KEY:ns1,ns2</code>.</td></tr>
+    <tr><td><code>--namespace</code></td><td><code>default</code></td><td>Namespace for <code>mcp</code>.</td></tr>
+    <tr><td><code>--agent-id</code></td><td>none</td><td><code>mcp</code>: stamp writes and scope recalls to this identity.</td></tr>
+    <tr><td><code>--quantize</code> / <code>--no-quantize</code></td><td>auto at ≥1024 dims</td><td>Force SQ8 or f32.</td></tr>
+    <tr><td><code>--embedder</code></td><td><code>hash</code></td><td><code>hash</code> | <code>openai</code> | <code>gemini</code></td></tr>
+    <tr><td><code>--embedding-model</code> / <code>--embedding-url</code></td><td>provider defaults</td><td>Any OpenAI-compatible server.</td></tr>
+    <tr><td><code>--embed-query-prefix</code> / <code>--embed-passage-prefix</code></td><td>none</td><td>For asymmetric models (E5, BGE).</td></tr>
+    <tr><td><code>--reranker</code></td><td>off</td><td><code>openai</code>, with <code>--reranker-model</code> / <code>--reranker-url</code>.</td></tr>
+    <tr><td><code>--summarizer</code></td><td><code>extract</code></td><td><code>extract</code> | <code>openai</code></td></tr>
+    <tr><td><code>--lifecycle-interval-secs</code></td><td><code>300</code></td><td><code>0</code> disables the background pass.</td></tr>
+    <tr><td><code>--working-ttl-secs</code></td><td><code>86400</code></td><td>Default TTL for <code>working</code> memories.</td></tr>
+    <tr><td><code>--consolidate-after-secs</code></td><td><code>604800</code></td><td>Age at which episodic memories consolidate.</td></tr>
+    <tr><td><code>--log-format</code></td><td><code>text</code></td><td><code>text</code> | <code>json</code> | <code>off</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  API keys for embedding and reranking come from
+  <code>MEMRUST_EMBED_API_KEY</code>, <code>OPENAI_API_KEY</code> or
+  <code>GEMINI_API_KEY</code>. Local OpenAI-compatible servers need no key.
+</p>
+
+<!-- ================================================================= -->
+<h2 id="sdk-python">Python SDK</h2>
+
+<p><code>pip install memrust</code> — zero dependencies, standard library only.</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Method</th><th>Returns</th></tr></thead>
+  <tbody>
+    <tr><td><code>MemrustClient(base_url, *, agent_id, api_key, namespace, timeout)</code></td><td>client</td></tr>
+    <tr><td><code>.remember(text, *, kind, tags, session_id, agent_id, importance, ttl_seconds, visibility, metadata, embedding)</code></td><td><code>dict</code> — the record</td></tr>
+    <tr><td><code>.remember_batch(items)</code></td><td><code>list[dict]</code></td></tr>
+    <tr><td><code>.recall(query, *, top_k, strategy, as_agent, kinds, tags, session_id, since, until, rerank, query_embedding, ef_search)</code></td><td><code>list[dict]</code> — hits</td></tr>
+    <tr><td><code>.forget(memory_id)</code></td><td><code>bool</code></td></tr>
+    <tr><td><code>.health()</code></td><td><code>dict</code> — stats</td></tr>
+    <tr><td><code>.run_lifecycle()</code></td><td><code>dict</code> — report</td></tr>
+    <tr><td><code>.snapshot(session_id=None)</code> / <code>.restore(records)</code></td><td><code>dict</code> / <code>int</code></td></tr>
+    <tr><td><code>.checkpoint()</code></td><td><code>None</code></td></tr>
+    <tr><td><code>.namespaces()</code> / <code>.drop_namespace(ns)</code></td><td><code>list[str]</code> / <code>bool</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Constructor <code>agent_id</code> is applied to both sides: writes are stamped
+  with it, and recalls run <code>as_agent</code> automatically. Errors raise
+  <code>MemrustError</code>.
+</p>
+
+<h2 id="sdk-ts">TypeScript SDK</h2>
+
+<p>
+  <code>npm install memrust-client</code> — zero dependencies, uses
+  <code>fetch</code>. Works in Node 18+, Bun, Deno and browsers. Same surface,
+  camelCase options (<code>topK</code>, <code>asAgent</code>,
+  <code>sessionId</code>, <code>ttlSeconds</code>, <code>efSearch</code>), fully
+  typed: <code>MemoryRecord</code>, <code>RecallHit</code>,
+  <code>RecallSignals</code>, <code>EngineStats</code>,
+  <code>LifecycleReport</code>, <code>Snapshot</code>.
+</p>
+
+<div class="cb">
+  <div class="cb-head">typescript<button class="copy">copy</button></div>
+<pre><span class="k">import</span> { MemrustClient, <span class="k">type</span> RecallHit } <span class="k">from</span> <span class="s">"memrust-client"</span>;
+
+<span class="k">const</span> memory = <span class="k">new</span> <span class="f">MemrustClient</span>(process.env.MEMRUST_URL!, {
+  agentId: <span class="s">"planner"</span>,
+  apiKey: process.env.MEMRUST_API_KEY,
+  namespace: <span class="s">"acme"</span>,
+});
+
+<span class="k">const</span> hits: RecallHit[] = <span class="k">await</span> memory.<span class="f">recall</span>(<span class="s">"open incidents"</span>, {
+  strategy: <span class="s">"recent"</span>,
+  kinds: [<span class="s">"episodic"</span>],
+  topK: <span class="n">5</span>,
+});</pre>
+</div>
+
+<h2 id="sdk-rust">Rust crate</h2>
+
+<p>
+  <code>cargo add memrust</code> gives you the <em>engine</em>, not a client —
+  no server, no HTTP, no serialization. Use it when memory lives inside your
+  process.
+</p>
+
+<div class="cb">
+  <div class="cb-head">rust<button class="copy">copy</button></div>
+<pre><span class="k">use</span> memrust::{MemoryEngine, RememberRequest, RecallRequest, RecallStrategy};
+
+<span class="k">let mut</span> memory = MemoryEngine::<span class="f">open</span>(<span class="s">"./data"</span>.as_ref())?;
+
+memory.<span class="f">remember</span>(RememberRequest {
+    text: <span class="s">"deploy blocked on the expired TLS cert"</span>.into(),
+    ..Default::<span class="f">default</span>()
+})?;
+
+<span class="k">let</span> hits = memory.<span class="f">recall</span>(&amp;RecallRequest {
+    query: <span class="s">"why is the deploy blocked?"</span>.into(),
+    strategy: RecallStrategy::Recent,
+    top_k: <span class="f">Some</span>(<span class="n">5</span>),
+    ..Default::<span class="f">default</span>()
+});
+
+<span class="k">let</span> report = memory.<span class="f">run_lifecycle</span>()?;
+memory.<span class="f">checkpoint</span>()?;</pre>
+</div>
+
+<p>
+  <code>recall</code> takes <code>&amp;self</code>; <code>remember</code>,
+  <code>forget</code>, <code>run_lifecycle</code> and <code>checkpoint</code>
+  take <code>&amp;mut self</code>. For concurrent writers, <code>stage</code>
+  builds a record under a read lock and <code>apply_staged</code> commits it
+  under a write lock, which keeps the exclusive section short. Other useful
+  entry points: <code>open_with_embedder</code>, <code>open_with_options</code>,
+  <code>set_reranker</code>, <code>snapshot</code>, <code>restore</code>,
+  <code>compact</code>, <code>stats</code>, <code>top_entities</code>.
+</p>
+
+<!-- ================================================================= -->
+<h2 id="benchmarks">Benchmarks</h2>
+
+<p>Three scripts, all in <code>benches/</code>, all re-runnable.</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Script</th><th>Measures</th></tr></thead>
+  <tbody>
+    <tr><td><code>agent_recall.py</code></td><td>The 27% vs 75% result: identifier hit@5 against FAISS, Chroma and Qdrant using identical <code>all-MiniLM-L6-v2</code> embeddings.</td></tr>
+    <tr><td><code>compare.py</code></td><td>Ingest and query throughput against the same libraries.</td></tr>
+    <tr><td><code>concurrency.py</code></td><td>Crash safety: concurrent writers, checkpoints, <code>kill -9</code>, recovery count.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre>cd benches
+pip install -r requirements.txt
+python agent_recall.py     <span class="c"># the headline result</span>
+python concurrency.py      <span class="c"># durability under kill -9</span></pre>
+</div>
+
+<p>
+  The comparison holds embeddings constant on purpose. Every system gets the
+  same vectors, so the difference is retrieval design, not embedding quality.
+</p>
+
+<!-- ================================================================= -->
+<h2 id="troubleshooting">Troubleshooting</h2>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Symptom</th><th>Cause &amp; fix</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Recall returns nothing, but <code>/health</code> shows memories</td>
+      <td>Usually a visibility or filter mismatch. Drop <code>as_agent</code> and the filter, then add them back one at a time. Also check <code>expires_at</code> — <code>working</code> memories expire after a day.</td>
+    </tr>
+    <tr>
+      <td><code>supplied embedding has dim N but this collection's vector index is dim M</code></td>
+      <td>You changed embedding model. Vectors from different models are not comparable; re-ingest into a fresh namespace.</td>
+    </tr>
+    <tr>
+      <td>Everything is found by <code>lexical</code>, <code>vector</code> is always weak</td>
+      <td>You are on the default hash embedder. Expected. Switch to <code>--embedder openai</code> or a local model.</td>
+    </tr>
+    <tr>
+      <td><code>graph: 0.0</code> on a query you expected to match an entity</td>
+      <td>A single capitalised word at the start of a query is skipped by the extractor. Query a phrase, or pass <code>entities</code> explicitly on write. See <a href="#retrieval">the gotcha</a>.</td>
+    </tr>
+    <tr>
+      <td>Memories vanish after a redeploy</td>
+      <td>Ephemeral storage. Mount a real volume — see <a href="#deploy">deployment</a>.</td>
+    </tr>
+    <tr>
+      <td>MCP server shows as failed in Claude</td>
+      <td><code>memrust</code> is not on the client's <code>PATH</code>, or
+      <code>--data-dir</code> is relative. Use absolute paths for both.</td>
+    </tr>
+    <tr>
+      <td>Two clients are not sharing memory</td>
+      <td>They are pointed at different <code>--data-dir</code> values, or one is on a different namespace. Compare <code>GET /health</code> → <code>namespace</code>.</td>
+    </tr>
+    <tr>
+      <td>Writes are slow</td>
+      <td>Every write fsyncs. Use <code>remember_batch</code> — one fsync for the batch. If you are on a remote embedder, that call usually dominates anyway.</td>
+    </tr>
+    <tr>
+      <td><code>401</code> with a key you are certain is right</td>
+      <td>Header must be <code>Authorization: Bearer &lt;key&gt;</code> or <code>X-API-Key: &lt;key&gt;</code>. Scoped keys also 403 on admin routes — that is not an auth failure, it is the scope.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<footer>
+  <p>
+    Something unclear or missing? Open an issue — documentation gaps are bugs.
+  </p>
+  <div class="foot-links">
+    <a href="../">Home</a>
+    <a href="https://github.com/AIAnytime/memrust">GitHub</a>
+    <a href="https://github.com/AIAnytime/memrust/issues">Issues</a>
+    <a href="https://crates.io/crates/memrust">crates.io</a>
+    <a href="https://pypi.org/project/memrust/">PyPI</a>
+    <a href="https://www.npmjs.com/package/memrust-client">npm</a>
+    <a href="../llms.txt">llms.txt</a>
+    <a href="https://calendar.app.google/7mXS2JweP2pmmGbYA">Book a demo</a>
+  </div>
+</footer>
+
+</main>
+</div>
+
+<script>
+  // Theme: follow the OS, remember an explicit choice. Shared with the
+  // landing page through the same localStorage key.
+  var root = document.documentElement;
+  document.getElementById("theme").addEventListener("click", function () {
+    var set = root.getAttribute("data-theme");
+    var dark = set ? set === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    var next = dark ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("memrust-site-theme", next); } catch (e) {}
+  });
+
+  // Language tabs. Scoped per group, so the four tab strips on this page
+  // don't fight each other.
+  Array.prototype.forEach.call(document.querySelectorAll(".tabs"), function (group) {
+    var tabs = Array.prototype.slice.call(group.querySelectorAll(".tab"));
+    tabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        tabs.forEach(function (t) {
+          var on = t === tab;
+          t.setAttribute("aria-selected", String(on));
+          document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+        });
+      });
+    });
+  });
+
+  // Copy buttons: read the <pre> that follows the header this button sits in.
+  Array.prototype.forEach.call(document.querySelectorAll(".copy"), function (btn) {
+    btn.addEventListener("click", function () {
+      var pre = btn.closest(".cb").querySelector("pre");
+      navigator.clipboard.writeText(pre.textContent).then(function () {
+        var was = btn.textContent;
+        btn.textContent = "copied";
+        setTimeout(function () { btn.textContent = was; }, 1200);
+      });
+    });
+  });
+
+  // Sidebar: mobile toggle, filter, and scroll-spy.
+  var side = document.getElementById("side");
+  document.getElementById("menu").addEventListener("click", function () {
+    side.classList.toggle("open");
+  });
+  side.addEventListener("click", function (e) {
+    if (e.target.tagName === "A") side.classList.remove("open");
+  });
+
+  var links = Array.prototype.slice.call(side.querySelectorAll("a"));
+  var filter = document.getElementById("filter");
+  filter.addEventListener("input", function () {
+    var q = filter.value.trim().toLowerCase();
+    links.forEach(function (a) {
+      a.hidden = q !== "" && a.textContent.toLowerCase().indexOf(q) === -1;
+    });
+    Array.prototype.forEach.call(side.querySelectorAll(".grp"), function (g) {
+      // Hide a group label when everything under it is filtered out.
+      var any = false, n = g.nextElementSibling;
+      while (n && n.tagName === "A") { if (!n.hidden) any = true; n = n.nextElementSibling; }
+      g.hidden = !any;
+    });
+  });
+
+  // Scroll-spy: the active section is the last heading above the fold.
+  // Deliberately not IntersectionObserver — with headings further apart than
+  // the viewport, no heading is intersecting for most of a section and the
+  // highlight blinks out. "Last one passed" is always defined.
+  var targets = links
+    .map(function (a) { return document.getElementById(a.hash.slice(1)); })
+    .filter(Boolean);
+
+  function spy() {
+    var line = 90, active = targets[0];
+    for (var i = 0; i < targets.length; i++) {
+      if (targets[i].getBoundingClientRect().top <= line) active = targets[i];
+    }
+    // At the very bottom the last section may never cross the line.
+    if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 4) {
+      active = targets[targets.length - 1];
+    }
+    links.forEach(function (a) { a.classList.toggle("on", a.hash === "#" + active.id); });
+  }
+
+  if (targets.length) {
+    var queued = false;
+    addEventListener("scroll", function () {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(function () { queued = false; spy(); });
+    }, { passive: true });
+    spy();
+  }
+</script>
+</body>
+</html>
