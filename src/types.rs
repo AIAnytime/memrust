@@ -98,6 +98,19 @@ pub struct RememberRequest {
     /// Bring-your-own embedding; auto-embedded otherwise.
     #[serde(default)]
     pub embedding: Option<Vec<f32>>,
+    /// When this memory happened, in Unix **milliseconds**. Unset means now.
+    ///
+    /// Set it when the memory is older than the write: importing history from
+    /// another system, replaying a transcript, or ingesting dated documents.
+    /// Without it every imported memory looks equally recent and the recency
+    /// signal — which exists to answer "what did we decide lately" — is
+    /// flattened into a constant.
+    ///
+    /// `ttl_seconds` counts from this instant, not from the write, so an
+    /// import is idempotent in time: re-importing the same records twice
+    /// yields the same expiry rather than extending it.
+    #[serde(default)]
+    pub created_at: Option<i64>,
 }
 
 /// How recall should weight its retrieval signals.

@@ -93,11 +93,15 @@ class MemrustClient:
         visibility: Optional[str] = None,
         metadata: Optional[dict] = None,
         embedding: Optional[list[float]] = None,
+        created_at: Optional[int] = None,
     ) -> dict:
         """Store one memory; returns the stored record (id, entities, ...).
 
         kind: episodic | semantic | working | reflection | tool_call | procedural
         visibility: private | shared (default: private when an agent owns it)
+        created_at: when the memory happened, Unix *milliseconds*. Defaults to
+            now; set it when importing history so the recency signal stays
+            meaningful. ttl_seconds counts from it, not from the write.
         """
         body = _clean(
             {
@@ -111,6 +115,7 @@ class MemrustClient:
                 "visibility": visibility,
                 "metadata": metadata,
                 "embedding": embedding,
+                "created_at": created_at,
             }
         )
         return self._request("POST", "/v1/remember", body)["record"]

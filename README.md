@@ -277,6 +277,17 @@ curl -X POST localhost:7700/v1/recall -H 'content-type: application/json' \
 Pass `ef_search` on a recall to widen the HNSW beam for that query alone —
 higher is more accurate and slower, unset uses the index default (100).
 
+Importing history? Pass `created_at` (Unix **milliseconds**) so memories carry
+the time they happened rather than the time they were written — otherwise
+everything you import looks equally recent and the recency signal flattens
+into a constant. `ttl_seconds` counts from `created_at`, so re-importing the
+same records is idempotent instead of extending their life each time.
+
+```bash
+curl -X POST localhost:7700/v1/remember_batch -H 'content-type: application/json' \
+  -d '{"items":[{"text":"Globex renewed at $120k ARR","created_at":1750000000000}]}'
+```
+
 Recall strategies: `balanced` (default), `semantic`, `lexical`, `recent`,
 `relational` (graph-first: things *connected* to the query's entities) —
 they reweight the fusion, they don't switch indexes off, so an exact-ID query

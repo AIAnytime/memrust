@@ -37,6 +37,36 @@ fn is_expired(record: &MemoryRecord, now: i64) -> bool {
     record.expires_at.is_some_and(|t| t <= now)
 }
 
+/// Below this, a value called "Unix milliseconds" is not one: it lands in
+/// 1973, and no agent memory is from 1973. Unix *seconds* for any date this
+/// century falls well under it, which is the mistake worth catching.
+const IMPLAUSIBLE_MS: i64 = 100_000_000_000;
+
+/// Shared validation for both write paths, so `remember` and `remember_batch`
+/// cannot drift apart on what they accept.
+fn check_request(req: &RememberRequest) -> Result<()> {
+    if req.text.trim().is_empty() {
+        bail!("memory text must not be empty");
+    }
+    if let Some(ts) = req.created_at {
+        if ts <= 0 {
+            bail!("created_at must be a positive Unix timestamp in milliseconds, got {ts}");
+        }
+        // Seconds-where-milliseconds-are-expected is the one mistake that
+        // fails silently: the write succeeds, the memory is dated 1970, and
+        // its recency signal is pinned at zero forever. Refusing it costs a
+        // caller one fix; accepting it costs them a debugging session.
+        if ts < IMPLAUSIBLE_MS {
+            bail!(
+                "created_at {ts} is milliseconds since the Unix epoch, which would date this \
+                 memory to 1970. It looks like Unix seconds — try {} instead.",
+                ts * 1000
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Multi-agent visibility: an unscoped recall sees everything; a recall
 /// `as_agent` sees shared memories, unowned memories, and its own.
 fn visible_to(record: &MemoryRecord, as_agent: Option<&str>) -> bool {
@@ -306,9 +336,7 @@ impl MemoryEngine {
     /// landing in between would persist state without this record and
     /// truncate the WAL entry that describes it, losing the write.
     pub fn stage(&self, mut req: RememberRequest) -> Result<MemoryRecord> {
-        if req.text.trim().is_empty() {
-            bail!("memory text must not be empty");
-        }
+        check_request(&req)?;
         let embedding = match req.embedding.take() {
             Some(e) => self.prepare_supplied(e)?,
             None => self.embedder.embed(&req.text)?,
@@ -327,9 +355,7 @@ impl MemoryEngine {
     pub fn stage_batch(&self, mut reqs: Vec<RememberRequest>) -> Result<Vec<MemoryRecord>> {
         let mut embeddings: Vec<Option<Vec<f32>>> = Vec::with_capacity(reqs.len());
         for req in &mut reqs {
-            if req.text.trim().is_empty() {
-                bail!("memory text must not be empty");
-            }
+            check_request(req)?;
             embeddings.push(match req.embedding.take() {
                 Some(e) => Some(self.prepare_supplied(e)?),
                 None => None,
@@ -379,11 +405,16 @@ impl MemoryEngine {
     /// Build a record without persisting it, so batch ingest can group the
     /// WAL writes behind one fsync.
     fn build_record(&self, req: RememberRequest, embedding: Vec<f32>) -> MemoryRecord {
-        let now = now_ms();
+        let created_at = req.created_at.unwrap_or_else(now_ms);
+        // TTL runs from when the memory happened, not from when it was
+        // written. For a live write those are the same instant; for an import
+        // they are not, and counting from the write would resurrect memories
+        // that should already have expired — and extend them again on every
+        // re-import.
         let expires_at = match req.ttl_seconds {
-            Some(secs) => Some(now + secs as i64 * 1000),
+            Some(secs) => Some(created_at + secs as i64 * 1000),
             None if req.kind == MemoryKind::Working => {
-                Some(now + self.cfg.working_ttl_secs as i64 * 1000)
+                Some(created_at + self.cfg.working_ttl_secs as i64 * 1000)
             }
             None => None,
         };
@@ -397,7 +428,7 @@ impl MemoryEngine {
             id: Uuid::new_v4(),
             kind: req.kind,
             text: req.text,
-            created_at: now,
+            created_at,
             importance: req.importance.unwrap_or(0.5).clamp(0.0, 1.0),
             expires_at,
             sources: Vec::new(),

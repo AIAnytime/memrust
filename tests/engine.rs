@@ -162,3 +162,214 @@ fn lexical_strategy_finds_exact_identifiers() {
     assert!(hits[0].record.text.contains("INC-90312"));
     std::fs::remove_dir_all(&dir).ok();
 }
+
+// ---------------------------------------------------------------------------
+// created_at: importing history with the times it actually happened.
+// ---------------------------------------------------------------------------
+
+const DAY_MS: i64 = 24 * 3600 * 1000;
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+}
+
+#[test]
+fn created_at_is_honoured_and_defaults_to_now() {
+    let dir = tmp_dir("created-at");
+    let mut engine = MemoryEngine::open(&dir).unwrap();
+    let backdated = now_ms() - 30 * DAY_MS;
+
+    let old = engine
+        .remember(RememberRequest {
+            text: "the Q2 planning call happened".into(),
+            created_at: Some(backdated),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(old.created_at, backdated);
+
+    let fresh = engine
+        .remember(RememberRequest {
+            text: "the Q3 planning call happened".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(
+        (now_ms() - fresh.created_at).abs() < 5_000,
+        "unset created_at should mean now, got {}",
+        fresh.created_at
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn backdated_memories_decay_in_recall() {
+    // The whole point of the field: an imported memory must not look as fresh
+    // as one written today, or the recency signal is decoration.
+    let dir = tmp_dir("created-at-decay");
+    let mut engine = MemoryEngine::open(&dir).unwrap();
+    engine
+        .remember(RememberRequest {
+            text: "deployment freeze agreed for the release window".into(),
+            created_at: Some(now_ms() - 60 * DAY_MS),
+            ..Default::default()
+        })
+        .unwrap();
+    engine
+        .remember(RememberRequest {
+            text: "deployment freeze lifted for the release window".into(),
+            ..Default::default()
+        })
+        .unwrap();
+
+    let hits = engine.recall(&RecallRequest {
+        query: "deployment freeze release window".into(),
+        strategy: RecallStrategy::Recent,
+        ..Default::default()
+    });
+    assert_eq!(hits.len(), 2);
+    let old = hits.iter().find(|h| h.record.text.contains("agreed")).unwrap();
+    let new = hits.iter().find(|h| h.record.text.contains("lifted")).unwrap();
+    assert!(
+        old.signals.recency < new.signals.recency,
+        "60-day-old memory scored recency {} vs fresh {}",
+        old.signals.recency,
+        new.signals.recency
+    );
+    // Two months is ~8.6 half-lives, so decay should be heavy, not marginal.
+    assert!(old.signals.recency < 0.05, "got {}", old.signals.recency);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn ttl_counts_from_created_at_not_from_the_write() {
+    // Re-importing a snapshot must not keep resurrecting memories that were
+    // already dead. An hour-old memory with a 30-minute TTL is expired on
+    // arrival, however late it is written.
+    let dir = tmp_dir("created-at-ttl");
+    let mut engine = MemoryEngine::open(&dir).unwrap();
+    let rec = engine
+        .remember(RememberRequest {
+            text: "scratch state from an hour ago".into(),
+            created_at: Some(now_ms() - 3600 * 1000),
+            ttl_seconds: Some(1800),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(rec.expires_at.unwrap() < now_ms(), "should be expired already");
+    let hits = engine.recall(&RecallRequest {
+        query: "scratch state".into(),
+        ..Default::default()
+    });
+    assert!(hits.is_empty(), "expired memory must not be recallable");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn working_memories_inherit_the_default_ttl_from_created_at() {
+    let dir = tmp_dir("created-at-working");
+    let mut engine = MemoryEngine::open(&dir).unwrap();
+    let backdated = now_ms() - 3 * DAY_MS;
+    let rec = engine
+        .remember(RememberRequest {
+            text: "half-finished draft from three days ago".into(),
+            kind: MemoryKind::Working,
+            created_at: Some(backdated),
+            ..Default::default()
+        })
+        .unwrap();
+    // Default working TTL is one day, so three days back is long gone.
+    assert_eq!(rec.expires_at, Some(backdated + DAY_MS));
+    assert!(rec.expires_at.unwrap() < now_ms());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn seconds_where_milliseconds_belong_is_rejected() {
+    // The silent-failure case: accepted, the memory is dated 1970 and its
+    // recency is pinned at zero with nothing to show you why.
+    let dir = tmp_dir("created-at-units");
+    let mut engine = MemoryEngine::open(&dir).unwrap();
+    let err = engine
+        .remember(RememberRequest {
+            text: "written with a seconds timestamp".into(),
+            created_at: Some(1_785_306_704),
+            ..Default::default()
+        })
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("seconds"), "unhelpful error: {err}");
+    assert!(err.contains("1785306704000"), "should suggest the fix: {err}");
+
+    for bad in [0, -1] {
+        assert!(engine
+            .remember(RememberRequest {
+                text: "nonsense timestamp".into(),
+                created_at: Some(bad),
+                ..Default::default()
+            })
+            .is_err());
+    }
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn batch_ingest_honours_per_item_created_at() {
+    let dir = tmp_dir("created-at-batch");
+    let mut engine = MemoryEngine::open(&dir).unwrap();
+    let base = now_ms() - 10 * DAY_MS;
+    let records = engine
+        .remember_batch(
+            (0..5)
+                .map(|i| RememberRequest {
+                    text: format!("imported transcript turn {i}"),
+                    created_at: Some(base + i * 1000),
+                    ..Default::default()
+                })
+                .collect(),
+        )
+        .unwrap();
+    for (i, r) in records.iter().enumerate() {
+        assert_eq!(r.created_at, base + i as i64 * 1000);
+    }
+    // A bad item must fail the whole batch rather than land half of it.
+    assert!(engine
+        .remember_batch(vec![
+            RememberRequest {
+                text: "good".into(),
+                created_at: Some(base),
+                ..Default::default()
+            },
+            RememberRequest {
+                text: "bad".into(),
+                created_at: Some(42),
+                ..Default::default()
+            },
+        ])
+        .is_err());
+    assert_eq!(engine.stats().total_memories, 5, "partial batch was applied");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn created_at_survives_restart() {
+    let dir = tmp_dir("created-at-recovery");
+    let backdated = now_ms() - 45 * DAY_MS;
+    let id = {
+        let mut engine = MemoryEngine::open(&dir).unwrap();
+        engine
+            .remember(RememberRequest {
+                text: "an imported memory that must keep its date".into(),
+                created_at: Some(backdated),
+                ..Default::default()
+            })
+            .unwrap()
+            .id
+    };
+    let engine = MemoryEngine::open(&dir).unwrap();
+    assert_eq!(engine.get(&id).unwrap().created_at, backdated);
+    std::fs::remove_dir_all(&dir).ok();
+}

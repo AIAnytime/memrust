@@ -66,6 +66,14 @@ export interface RememberOptions {
   visibility?: Visibility;
   metadata?: unknown;
   embedding?: number[];
+  /**
+   * When the memory happened, in Unix **milliseconds**. Defaults to now.
+   * Set it when importing history, replaying a transcript or ingesting dated
+   * documents — otherwise every imported memory looks equally recent and the
+   * recency signal flattens into a constant. `ttlSeconds` counts from this
+   * instant rather than from the write, so re-importing is idempotent.
+   */
+  createdAt?: number;
 }
 
 export interface RecallOptions {
@@ -172,6 +180,7 @@ export class MemrustClient {
         visibility: opts.visibility,
         metadata: opts.metadata,
         embedding: opts.embedding,
+        created_at: opts.createdAt,
       }),
     );
     return r.record;
@@ -194,6 +203,7 @@ export class MemrustClient {
           visibility: item.visibility,
           metadata: item.metadata,
           embedding: item.embedding,
+          created_at: item.createdAt,
         }),
       ),
     });

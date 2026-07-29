@@ -22,14 +22,15 @@ Parity with the Mem0 adapter is deliberate:
   * the same "{timestamp}: {memory}" context lines
   * the same OpenAI model, via the benchmark's own llms.llm_request
 
-One asymmetry the reader deserves to know about. Mem0 accepts a caller-supplied
-timestamp, so its memories carry true conversation times. memrust stamps
-created_at at write time and has no way to backdate, so every memory here looks
-equally recent and the recency signal is inert (a constant across candidates,
-which neither helps nor hurts ranking). To compensate, the conversation
-timestamp is written into the indexed text, where the model — and BM25 — can
-see it. That is a fair trade, not a free one, and it is a genuine gap in the
-engine's API.
+Timestamps are the conversation's own, passed through `created_at`, so the
+recency signal decays from when a turn happened rather than from when this
+script wrote it. The timestamp is *also* written into the indexed text, which
+is what the reference adapter puts in front of the model — keeping that makes
+the answering step identical rather than quietly advantaged.
+
+(Earlier revisions of this harness could not do the first of those: memrust had
+no way to backdate a memory, so every imported turn looked equally recent and
+recency was inert. Running this benchmark is what surfaced the gap.)
 """
 
 import os
@@ -41,6 +42,7 @@ import argparse
 import traceback
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from tqdm import tqdm
@@ -83,6 +85,20 @@ def _post(path: str, body: dict, namespace: str, timeout: float = 120.0) -> dict
     raise RuntimeError(f"POST {path} failed after retries: {last}")
 
 
+DATE_FORMAT = "%b %d, %Y, %H:%M:%S"
+
+
+def to_unix_ms(stamp: str):
+    """HaluMem's 'Dec 15, 2025, 08:41:23' -> Unix milliseconds, or None."""
+    if not stamp:
+        return None
+    try:
+        dt = datetime.strptime(stamp, DATE_FORMAT).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return int(dt.timestamp() * 1000)
+
+
 def add_dialogue(namespace: str, turns: list, session_idx: int) -> float:
     """Store one session's turns verbatim. One batch = one embedding round-trip."""
     items = [
@@ -90,6 +106,9 @@ def add_dialogue(namespace: str, turns: list, session_idx: int) -> float:
             "text": f"[{t.get('timestamp', '')}] {t['role']}: {t['content']}",
             "kind": "episodic",
             "session_id": f"s{session_idx}",
+            # The conversation's own time, so recency decays from when the turn
+            # happened rather than from when this import ran.
+            "created_at": to_unix_ms(t.get("timestamp", "")),
             "metadata": {
                 "timestamp": t.get("timestamp", ""),
                 "role": t["role"],
@@ -98,6 +117,9 @@ def add_dialogue(namespace: str, turns: list, session_idx: int) -> float:
         }
         for t in turns
     ]
+    # created_at is dropped when unparseable rather than sent as null, so the
+    # engine falls back to "now" for that turn instead of rejecting the batch.
+    items = [{k: v for k, v in it.items() if v is not None} for it in items]
     if not items:
         return 0.0
     start = time.time()

@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- **`created_at` on `remember` and `remember_batch`.** Unix milliseconds,
+  defaulting to now. Without it, every memory imported from another system, a
+  transcript replay or a dated document was stamped with the time of the
+  import, so they all scored identical recency and one of the four retrieval
+  signals stopped distinguishing anything. This blocked migrations onto
+  memrust; it surfaced while writing the HaluMem adapter in
+  `benches/halumem/`, which needed conversation times to be honest about what
+  it was measuring.
+- **TTLs now count from `created_at` rather than from the write.** For a live
+  write those are the same instant. For an import they are not, and counting
+  from the write would resurrect memories that had already expired — and
+  extend them again on every re-import. Re-importing the same records is now
+  idempotent in time.
+- Unix *seconds* passed where milliseconds belong is rejected, with the
+  corrected value in the error. Accepted, it fails silently: the write
+  succeeds, the memory is dated 1970, and its recency is pinned at zero with
+  nothing to point at.
+- Python and TypeScript SDKs take `created_at` / `createdAt`.
+
 ## 0.6.1 — 2026-07-28
 
 - **`GET /metrics`** in Prometheus format: request counters and latency

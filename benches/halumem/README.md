@@ -48,18 +48,20 @@ every question would let a session-3 question retrieve a session-40 memory,
 which inflates the score for free. The reference adapter walks sessions in
 order; so does this one.
 
-## One asymmetry, disclosed
+## Timestamps
 
-Mem0 accepts a caller-supplied timestamp, so its stored memories carry true
-conversation times. memrust stamps `created_at` at write time and has no way to
-backdate a memory, so under this harness every memory looks equally recent and
-the recency signal is inert — a constant across candidates, which neither helps
-nor hurts ranking.
+Each turn is stored with the conversation's own time via `created_at`, so
+recency decays from when a turn happened rather than from when the import ran.
+The timestamp is also written into the indexed text, because that is what the
+reference adapter puts in front of the answering model — keeping both makes the
+answering step identical rather than quietly advantaged.
 
-To compensate, the conversation timestamp is written into the indexed text,
-where both the answering model and BM25 can see it. That is a fair trade rather
-than a free one. The real fix is an optional `created_at` on `remember`, which
-memrust should have regardless of this benchmark.
+This is worth recording as a finding rather than a footnote: **the first
+version of this harness could not do it.** memrust had no way to backdate a
+memory, so every imported turn was stamped "now", they all scored identical
+recency, and one of the four retrieval signals was doing nothing. Running a
+third-party benchmark is what surfaced a gap that also blocks every real
+migration onto memrust. `created_at` was added in response.
 
 ## Running it
 
