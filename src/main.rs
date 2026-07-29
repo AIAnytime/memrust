@@ -4,10 +4,11 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use memrust::embed::{Embedder, HashEmbedder, RemoteEmbedder};
 use memrust::engine::MemoryEngine;
+use memrust::extract::LlmExtractor;
 use memrust::index::vector::{HnswConfig, Quantization, AUTO_QUANTIZE_DIM};
 use memrust::rerank::LlmReranker;
 use memrust::server::metrics::{set_log_format, LogFormat, Metrics};
-use memrust::server::tenancy::{ApiKey, Auth, EngineFactory, MakeReranker, Registry};
+use memrust::server::tenancy::{ApiKey, Auth, EngineFactory, MakeExtractor, MakeReranker, Registry};
 use memrust::summarize::{ExtractiveSummarizer, RemoteSummarizer, Summarizer};
 use memrust::types::{LifecycleConfig, MemoryKind, RecallRequest, RecallStrategy, RememberRequest};
 
@@ -63,6 +64,22 @@ RERANK OPTIONS (serve/mcp):
     --reranker openai               enable LLM reranking of recall results
     --reranker-model <name>         default: gpt-4o-mini
     --reranker-url <base>           OpenAI-compatible base URL, default https://api.openai.com/v1
+
+EXTRACTION OPTIONS (serve):
+    --extractor openai              enable POST /v1/ingest, which lets a model
+                                    distil durable facts out of an exchange
+    --extractor-model <name>        default: gpt-4o-mini
+    --extractor-url <base>          OpenAI-compatible base URL, default https://api.openai.com/v1
+    --extractor-max-facts <n>       memories per exchange, default 12
+
+    Off by default, and it changes nothing about `remember`: that write path
+    stays deterministic with no model in it. /v1/ingest stores the turns
+    verbatim *and* the extracted facts, with provenance linking them, so a bad
+    extraction is recoverable rather than permanent. Deduplication is a cosine
+    comparison, not a second model call. Superseding — deleting a memory a new
+    fact contradicts — is opt-in per request with \"supersede\": true.
+
+    API key env vars: MEMRUST_EXTRACT_API_KEY, or OPENAI_API_KEY.
 
 LIFECYCLE OPTIONS (serve/mcp):
     --summarizer extract|openai       default: extract (offline, no LLM)
@@ -121,6 +138,28 @@ fn index_config(args: &[String]) -> Result<HnswConfig> {
     })
 }
 
+fn extractor_factory(args: &[String]) -> Result<Option<MakeExtractor>> {
+    match flag(args, "--extractor", "none").as_str() {
+        "none" => Ok(None),
+        "openai" => {
+            let url = flag(args, "--extractor-url", "https://api.openai.com/v1");
+            let model = flag(args, "--extractor-model", "gpt-4o-mini");
+            let max_facts: usize = flag(args, "--extractor-max-facts", "12")
+                .parse()
+                .map_err(|_| anyhow::anyhow!("--extractor-max-facts expects a number"))?;
+            let key = std::env::var("MEMRUST_EXTRACT_API_KEY")
+                .or_else(|_| std::env::var("OPENAI_API_KEY"))
+                .unwrap_or_default();
+            Ok(Some(Box::new(move || {
+                let mut ex = LlmExtractor::openai_compatible(&url, &model, &key);
+                ex.max_facts = max_facts;
+                Arc::new(ex)
+            })))
+        }
+        other => bail!("unknown extractor '{other}' (expected openai)"),
+    }
+}
+
 fn reranker_factory(args: &[String]) -> Result<Option<MakeReranker>> {
     match flag(args, "--reranker", "none").as_str() {
         "none" => Ok(None),
@@ -149,6 +188,7 @@ fn build_registry(args: &[String]) -> Result<Arc<Registry>> {
         embedder: Box::new(move || build_embedder(&owned)),
         summarizer: Box::new(move || build_summarizer(&owned2)),
         reranker: reranker_factory(args)?,
+        extractor: extractor_factory(args)?,
         lifecycle: build_lifecycle_config(args)?,
         index: index_config(args)?,
     };

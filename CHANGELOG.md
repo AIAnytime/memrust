@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- **Optional extraction layer**, behind `--extractor openai` and
+  `POST /v1/ingest`. Hand it an exchange and a model distils durable facts out
+  of it, so callers no longer have to decide what is worth remembering
+  themselves. Off by default, and `remember` is untouched: with no extractor
+  configured the write path has no model in it and nothing about the engine's
+  behaviour changes.
+
+  Four choices distinguish it from extract-and-discard designs, and each one
+  follows from memrust's write path being cheap:
+
+  - **The raw turns are kept** alongside the extracted facts, with `sources`
+    linking them. Systems whose writes cost two model calls per memory cannot
+    afford to store everything; memrust can, so a bad extraction is
+    recoverable rather than permanent.
+  - **Deduplication is a cosine comparison, not a second model call.** Free,
+    deterministic, and unable to invent a reason to drop a memory.
+  - **One model call per exchange**, not one per candidate fact.
+  - **Superseding is opt-in per request.** Deleting a memory a new fact
+    contradicts is the only operation here that destroys something the caller
+    believed, and published evaluations put LLM update-routing near 25%
+    accuracy. Keeping both is recoverable; deleting the correct one is not.
+
+  The model call runs under a read lock, so recalls keep serving during it —
+  measured at 1.0 ms mean while a 2-second extraction was in flight.
+- `WalOp::SetSources` records provenance attached after a record is written.
+  It needs its own op because replay skips a `Remember` whose id already
+  exists — the guard that makes crash recovery idempotent would otherwise
+  discard the update, which is exactly what it did until a restart test caught
+  it.
+
 - **`created_at` on `remember` and `remember_batch`.** Unix milliseconds,
   defaulting to now. Without it, every memory imported from another system, a
   transcript replay or a dated document was stamped with the time of the

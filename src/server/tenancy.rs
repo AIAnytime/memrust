@@ -16,6 +16,7 @@ use anyhow::{bail, Result};
 use crate::embed::Embedder;
 use crate::engine::MemoryEngine;
 use crate::index::vector::HnswConfig;
+use crate::extract::Extractor;
 use crate::rerank::Reranker;
 use crate::summarize::Summarizer;
 use crate::types::LifecycleConfig;
@@ -28,11 +29,16 @@ pub const DEFAULT_NAMESPACE: &str = "default";
 pub type MakeEmbedder = Box<dyn Fn() -> Result<Box<dyn Embedder>> + Send + Sync>;
 pub type MakeSummarizer = Box<dyn Fn() -> Result<Box<dyn Summarizer>> + Send + Sync>;
 pub type MakeReranker = Box<dyn Fn() -> Box<dyn Reranker> + Send + Sync>;
+/// Extractors are shared rather than cloned per namespace: they hold only a
+/// URL, a model name and an HTTP agent, and the agent's connection pool is
+/// worth reusing.
+pub type MakeExtractor = Box<dyn Fn() -> Arc<dyn Extractor> + Send + Sync>;
 
 pub struct EngineFactory {
     pub embedder: MakeEmbedder,
     pub summarizer: MakeSummarizer,
     pub reranker: Option<MakeReranker>,
+    pub extractor: Option<MakeExtractor>,
     pub lifecycle: LifecycleConfig,
     pub index: HnswConfig,
 }
@@ -109,6 +115,9 @@ impl Registry {
         )?;
         if let Some(make) = &self.factory.reranker {
             engine.set_reranker(make());
+        }
+        if let Some(make) = &self.factory.extractor {
+            engine.set_extractor(make());
         }
         let ns = Namespace {
             engine: Arc::new(RwLock::new(engine)),

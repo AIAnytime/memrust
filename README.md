@@ -277,6 +277,21 @@ curl -X POST localhost:7700/v1/recall -H 'content-type: application/json' \
 Pass `ef_search` on a recall to widen the HNSW beam for that query alone —
 higher is more accurate and slower, unset uses the index default (100).
 
+Want a model to decide what is worth remembering? Start with
+`--extractor openai` and post an exchange to `/v1/ingest` instead of a finished
+memory:
+
+```bash
+curl -X POST localhost:7700/v1/ingest -H 'content-type: application/json' \
+  -d '{"turns":[{"role":"user","content":"Dana escalated INC-90312; we capped the Redis pool at 64."}]}'
+```
+
+It keeps the raw turns *and* the extracted facts, with `sources` linking them,
+so a bad extraction is recoverable. Deduplication is a cosine comparison rather
+than a second model call, and superseding — deleting a memory a new fact
+contradicts — is opt-in per request. Off by default: with no extractor
+configured, no write in memrust involves a model.
+
 Importing history? Pass `created_at` (Unix **milliseconds**) so memories carry
 the time they happened rather than the time they were written — otherwise
 everything you import looks equally recent and the recency signal flattens

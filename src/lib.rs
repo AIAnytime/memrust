@@ -1,5 +1,6 @@
 pub mod embed;
 pub mod engine;
+pub mod extract;
 pub mod index;
 pub mod rerank;
 pub mod server;

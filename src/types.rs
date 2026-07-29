@@ -315,6 +315,68 @@ pub struct LifecycleReport {
     pub checkpointed: bool,
 }
 
+fn default_true() -> bool {
+    true
+}
+
+/// Ingest an exchange: store it verbatim, and optionally let a model distil
+/// durable facts out of it. The one entry point where an LLM may touch a
+/// write, and every part of that is opt-in.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct IngestRequest {
+    pub turns: Vec<crate::extract::Turn>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// When the exchange happened, Unix milliseconds. Defaults to now.
+    #[serde(default)]
+    pub created_at: Option<i64>,
+    #[serde(default)]
+    pub visibility: Option<Visibility>,
+    /// Keep the turns themselves as `episodic` memories. On by default:
+    /// extraction is lossy, and the raw exchange is what makes a bad
+    /// extraction recoverable rather than permanent.
+    #[serde(default = "default_true")]
+    pub store_raw: bool,
+    /// Run the configured extractor. On by default *when one is configured* —
+    /// with no extractor this is a verbatim write and nothing else.
+    #[serde(default = "default_true")]
+    pub extract: bool,
+    /// Let the extractor delete memories the new facts contradict.
+    ///
+    /// Off by default, and that default is a position: superseding is the only
+    /// operation here that destroys something the caller previously believed,
+    /// and published evaluations put LLM update-routing accuracy near 25%.
+    /// Keeping both memories is recoverable; deleting the right one is not.
+    #[serde(default)]
+    pub supersede: bool,
+    /// Cosine similarity above which an extracted fact counts as already
+    /// known and is dropped. Defaults to 0.95.
+    #[serde(default)]
+    pub dedup_threshold: Option<f32>,
+}
+
+/// What an ingest actually did. Every number here is a decision the caller
+/// may want to audit rather than trust.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct IngestReport {
+    /// Verbatim turns stored, in order.
+    pub raw: Vec<Uuid>,
+    /// Extracted facts stored.
+    pub extracted: Vec<Uuid>,
+    /// Memories deleted because a new fact superseded them.
+    pub superseded: Vec<Uuid>,
+    /// Candidates the model proposed, before deduplication.
+    pub proposed: usize,
+    /// Candidates dropped as already known.
+    pub duplicates: usize,
+    /// False when no extractor is configured, or the request opted out.
+    pub extraction_ran: bool,
+}
+
 /// A portable export of (a session's) memory, restorable into any engine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Snapshot {

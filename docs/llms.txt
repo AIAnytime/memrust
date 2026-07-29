@@ -60,6 +60,7 @@ configured.
 - `POST /v1/remember` — `{text, kind?, tags?, importance?, session_id?, agent_id?, visibility?, embedding?, created_at?}` → the stored record. `created_at` is Unix milliseconds and defaults to now; set it when importing history so recency stays meaningful, and note that `ttl_seconds` counts from it rather than from the write.
 - `POST /v1/remember_batch` — `{items: [...]}`; one embedding round-trip and one fsync for the batch
 - `POST /v1/recall` — `{query, top_k?, strategy?, filter?, as_agent?, ef_search?, query_embedding?}` → `{hits: [{score, record, signals}]}`
+- `POST /v1/ingest` — `{turns: [{role, content}], store_raw?, extract?, supersede?, dedup_threshold?}` → `{report}`. The optional extraction layer: a model distils durable facts from an exchange. Needs `--extractor`; off otherwise, and `remember` never involves a model either way. Raw turns are kept alongside the extracted facts with `sources` linking them, deduplication is a cosine comparison rather than a second model call, and superseding (deleting a contradicted memory) is opt-in per request.
 - `POST /v1/forget` — `{id}` → `{forgotten}`; durable immediately
 - `GET /v1/memories?offset&limit` — newest first
 - `GET /v1/entities?limit` — extracted entities by frequency

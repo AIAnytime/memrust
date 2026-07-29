@@ -2,6 +2,7 @@
 //!
 //! POST /v1/remember       RememberRequest  -> MemoryRecord
 //! POST /v1/remember_batch { items }        -> { records } (one embed round-trip)
+//! POST /v1/ingest         IngestRequest    -> { report } (optional LLM extraction)
 //! POST /v1/checkpoint                      -> persist state, truncate WAL
 //! POST /v1/recall         RecallRequest    -> { hits: [RecallHit] }
 //! POST /v1/forget         { id }           -> { forgotten: bool }
@@ -35,7 +36,7 @@ use uuid::Uuid;
 
 use crate::server::metrics::{log_request, Metrics};
 use crate::server::tenancy::{extract_key, extract_namespace, ApiKey, Auth, Namespace, Registry};
-use crate::types::{MemoryRecord, RecallRequest, RememberRequest};
+use crate::types::{IngestReport, IngestRequest, MemoryRecord, RecallRequest, RememberRequest};
 
 /// API responses omit raw embeddings; they're an internal representation.
 fn without_embedding(mut record: MemoryRecord) -> MemoryRecord {
@@ -172,6 +173,7 @@ pub fn router(registry: Arc<Registry>, auth: Auth, metrics: Arc<Metrics>) -> Rou
         .route("/v1/entities", get(entities))
         .route("/v1/remember", post(remember))
         .route("/v1/remember_batch", post(remember_batch))
+        .route("/v1/ingest", post(ingest))
         .route("/v1/checkpoint", post(checkpoint))
         .route("/v1/recall", post(recall))
         .route("/v1/forget", post(forget))
@@ -352,6 +354,29 @@ async fn remember_batch(
     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     let records: Vec<_> = records.into_iter().map(without_embedding).collect();
     Ok(Json(json!({ "records": records })))
+}
+
+/// Store an exchange, and optionally let a model distil durable facts from it.
+///
+/// The planning phase runs under a *read* lock because it makes the model
+/// call, and a multi-second round-trip under the exclusive lock would stall
+/// every recall in this namespace. Only the commit phase takes the write lock,
+/// and it does no I/O beyond the WAL.
+async fn ingest(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<IngestRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let (ns, _) = state.resolve(&headers)?;
+    let report = tokio::task::spawn_blocking(move || -> anyhow::Result<IngestReport> {
+        let plan = ns.engine.read().unwrap().plan_ingest(&req)?;
+        let _commit = ns.commit.lock().expect("commit lock");
+        ns.engine.write().unwrap().apply_ingest(req, plan)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(json!({ "report": report })))
 }
 
 async fn checkpoint(

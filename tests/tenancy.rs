@@ -33,6 +33,7 @@ fn registry(dir: PathBuf) -> Arc<Registry> {
                 Ok(Box::new(memrust::summarize::ExtractiveSummarizer::default()))
             }),
             reranker: None,
+            extractor: None,
             lifecycle: LifecycleConfig::default(),
             index: Default::default(),
         },

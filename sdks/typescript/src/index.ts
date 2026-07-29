@@ -76,6 +76,35 @@ export interface RememberOptions {
   createdAt?: number;
 }
 
+export interface Turn {
+  role: string;
+  content: string;
+}
+
+export interface IngestOptions {
+  sessionId?: string;
+  agentId?: string;
+  tags?: string[];
+  createdAt?: number;
+  /** Keep the turns themselves as episodic memories. Default true. */
+  storeRaw?: boolean;
+  /** Run the configured extractor. Default true when one exists. */
+  extract?: boolean;
+  /** Let the model delete memories the new facts contradict. Default false. */
+  supersede?: boolean;
+  /** Cosine above which a fact counts as already known. Default 0.95. */
+  dedupThreshold?: number;
+}
+
+export interface IngestReport {
+  raw: string[];
+  extracted: string[];
+  superseded: string[];
+  proposed: number;
+  duplicates: number;
+  extraction_ran: boolean;
+}
+
 export interface RecallOptions {
   topK?: number;
   strategy?: RecallStrategy;
@@ -208,6 +237,35 @@ export class MemrustClient {
       ),
     });
     return r.records;
+  }
+
+  /**
+   * Store an exchange, optionally distilling durable facts from it.
+   *
+   * Needs a server started with `--extractor`; without one this is a verbatim
+   * write and `report.extraction_ran` is false. Raw turns are kept alongside
+   * any extracted facts (`storeRaw: false` to drop them), so a bad extraction
+   * stays recoverable. `supersede` lets the model delete memories the new
+   * facts contradict — off by default, because keeping both is recoverable
+   * and deleting the correct one is not.
+   */
+  async ingest(turns: Turn[], opts: IngestOptions = {}): Promise<IngestReport> {
+    const r = await this.request<{ report: IngestReport }>(
+      "POST",
+      "/v1/ingest",
+      clean({
+        turns,
+        session_id: opts.sessionId,
+        agent_id: opts.agentId ?? this.agentId,
+        tags: opts.tags,
+        created_at: opts.createdAt,
+        store_raw: opts.storeRaw,
+        extract: opts.extract,
+        supersede: opts.supersede,
+        dedup_threshold: opts.dedupThreshold,
+      }),
+    );
+    return r.report;
   }
 
   /**

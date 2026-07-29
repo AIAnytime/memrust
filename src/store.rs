@@ -20,6 +20,14 @@ use crate::types::MemoryRecord;
 pub enum WalOp {
     Remember { record: Box<MemoryRecord> },
     Forget { id: Uuid },
+    /// Provenance attached after the fact, when extraction links a distilled
+    /// memory back to the turns it came from.
+    ///
+    /// It needs its own op because replay skips a `Remember` whose id is
+    /// already present — the guard that makes crash recovery idempotent would
+    /// otherwise silently discard the update. Assigning the same value twice
+    /// is idempotent by construction, so this variant needs no such guard.
+    SetSources { id: Uuid, sources: Vec<Uuid> },
 }
 
 pub struct Wal {

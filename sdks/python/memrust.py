@@ -129,6 +129,50 @@ class MemrustClient:
             stamped.append(_clean(item))
         return self._request("POST", "/v1/remember_batch", {"items": stamped})["records"]
 
+    def ingest(
+        self,
+        turns: list[dict],
+        *,
+        session_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        tags: Optional[list[str]] = None,
+        created_at: Optional[int] = None,
+        store_raw: Optional[bool] = None,
+        extract: Optional[bool] = None,
+        supersede: Optional[bool] = None,
+        dedup_threshold: Optional[float] = None,
+    ) -> dict:
+        """Store an exchange, optionally distilling durable facts from it.
+
+        turns: [{"role": "user", "content": "..."}, ...]
+
+        Needs a server started with --extractor; without one this is a
+        verbatim write and `report["extraction_ran"]` is False. The raw turns
+        are kept alongside any extracted facts (store_raw=False to drop them),
+        so a bad extraction stays recoverable.
+
+        supersede=True lets the model delete memories the new facts
+        contradict. Off by default: keeping both is recoverable, deleting the
+        correct one is not.
+
+        Returns the report: raw / extracted / superseded ids, plus how many
+        candidates were proposed and how many were dropped as duplicates.
+        """
+        body = _clean(
+            {
+                "turns": turns,
+                "session_id": session_id,
+                "agent_id": agent_id or self.agent_id,
+                "tags": tags,
+                "created_at": created_at,
+                "store_raw": store_raw,
+                "extract": extract,
+                "supersede": supersede,
+                "dedup_threshold": dedup_threshold,
+            }
+        )
+        return self._request("POST", "/v1/ingest", body)["report"]
+
     def recall(
         self,
         query: str,

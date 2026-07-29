@@ -375,6 +375,7 @@
   <div class="grp">Going deeper</div>
   <a href="#embeddings">Embeddings</a>
   <a href="#capture">Capturing memories</a>
+  <a href="#extraction">The extraction layer</a>
   <a href="#rag">Using it for RAG</a>
   <a href="#lifecycle">Lifecycle &amp; consolidation</a>
   <a href="#tuning">Tuning recall</a>
@@ -1618,6 +1619,13 @@ memrust serve --embedder openai \
   costs one small call per turn.
 </p>
 
+<p>
+  memrust ships this as <a href="#extraction">the extraction layer</a> — one
+  endpoint, deterministic deduplication, provenance back to the raw turns, and
+  off unless you configure it. Roll your own with the pattern below if you want
+  control over the prompt.
+</p>
+
 <div class="cb">
   <div class="cb-head">python<button class="copy">copy</button></div>
 <pre>EXTRACT = (
@@ -1661,6 +1669,101 @@ memrust serve --embedder openai \
 </div>
 
 <!-- ================================================================= -->
+<h2 id="extraction">The extraction layer</h2>
+
+<p>
+  Level 3 above — having a model decide what is worth remembering — is built in.
+  Start the server with an extractor and <code>POST /v1/ingest</code> takes a
+  raw exchange instead of a finished memory.
+</p>
+
+<div class="cb">
+  <div class="cb-head">shell<button class="copy">copy</button></div>
+<pre>memrust serve --extractor openai --extractor-model gpt-4o-mini
+
+<span class="c"># or entirely local</span>
+memrust serve --extractor openai \
+  --extractor-url http://localhost:11434/v1 \
+  --extractor-model qwen2.5:7b</pre>
+</div>
+
+<div class="cb">
+  <div class="cb-head">python<button class="copy">copy</button></div>
+<pre>report = memory.<span class="f">ingest</span>([
+    {<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"Dana escalated INC-90312; we capped the Redis pool at 64."</span>},
+    {<span class="s">"role"</span>: <span class="s">"assistant"</span>, <span class="s">"content"</span>: <span class="s">"Noted, I'll write that down."</span>},
+], session_id=<span class="s">"oncall"</span>)
+
+<span class="c"># {'raw': [2 ids], 'extracted': [2 ids], 'superseded': [],</span>
+<span class="c">#  'proposed': 2, 'duplicates': 0, 'extraction_ran': True}</span></pre>
+</div>
+
+<h3>What makes this different</h3>
+
+<p>
+  Extraction is not new; the design choices around it are, and each one follows
+  from memrust's write path being cheap.
+</p>
+
+<div class="cards">
+  <div class="card">
+    <h4>Raw turns are kept</h4>
+    <p>Systems that discard the conversation after extracting do so because
+    their write path costs two model calls per memory, so storing everything
+    is prohibitive. memrust's costs nothing, so it keeps both — and the facts
+    carry <code>sources</code> back to the turns they came from. A bad
+    extraction is recoverable instead of permanent.</p>
+  </div>
+  <div class="card">
+    <h4>Deduplication is deterministic</h4>
+    <p>Whether a fact is already known is a cosine comparison, not a second
+    model call. Free, repeatable, and it cannot invent a reason to drop
+    something. Tune with <code>dedup_threshold</code> (default 0.95).</p>
+  </div>
+  <div class="card">
+    <h4>One model call per exchange</h4>
+    <p>Not one per candidate fact. The routing decision that usually costs a
+    second call is the deterministic dedup above.</p>
+  </div>
+  <div class="card">
+    <h4>Superseding is opt-in</h4>
+    <p>Deleting a memory a new fact contradicts needs judgement, and published
+    evaluations put LLM update-routing near 25% accuracy. Off by default:
+    keeping both memories is recoverable, deleting the correct one is not.
+    Pass <code>"supersede": true</code> when you want it.</p>
+  </div>
+</div>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Field</th><th>Default</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>turns</code> <strong>required</strong></td><td>—</td><td><code>[{role, content}]</code></td></tr>
+    <tr><td><code>store_raw</code></td><td><code>true</code></td><td>Keep the turns as <code>episodic</code> memories.</td></tr>
+    <tr><td><code>extract</code></td><td><code>true</code></td><td>Run the extractor. No extractor configured = verbatim write.</td></tr>
+    <tr><td><code>supersede</code></td><td><code>false</code></td><td>Let the model delete contradicted memories.</td></tr>
+    <tr><td><code>dedup_threshold</code></td><td><code>0.95</code></td><td>Cosine above which a fact counts as already known.</td></tr>
+    <tr><td><code>session_id</code>, <code>agent_id</code>, <code>tags</code>, <code>created_at</code>, <code>visibility</code></td><td>—</td><td>Applied to everything the ingest stores.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note ok">
+  <span class="lbl">Recall does not stall during extraction</span>
+  <p>The model call runs while holding only a <em>read</em> lock; the write
+  lock is taken afterwards, for the commit alone. Measured against a scripted
+  model sleeping 2 seconds: the ingest took 2,011 ms while concurrent recalls
+  averaged 1.0 ms.</p>
+</div>
+
+<div class="note warn">
+  <span class="lbl">This is the one place a model touches a write</span>
+  <p><code>remember</code> is unchanged and still has no model in it. If you
+  need every write deterministic — for audit, reproducibility or data
+  residency — simply do not configure an extractor, and nothing about the
+  engine's behaviour changes.</p>
+</div>
+
 <h2 id="rag">Using memrust for plain RAG</h2>
 
 <p>Yes, it works. Map the concepts and go:</p>

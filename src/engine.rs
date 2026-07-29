@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -15,6 +15,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::embed::{Embedder, HashEmbedder};
+use crate::extract::{Candidate, Extractor};
 use crate::index::graph::{extract_entities, GraphIndex};
 use crate::index::text::Bm25Index;
 use crate::index::vector::{normalize, Hnsw, HnswConfig};
@@ -35,6 +36,28 @@ const CHECKPOINT_AFTER_OPS: usize = 1000;
 
 fn is_expired(record: &MemoryRecord, now: i64) -> bool {
     record.expires_at.is_some_and(|t| t <= now)
+}
+
+/// Cosine above which an extracted fact is treated as already stored.
+/// Deliberately high: dropping a genuinely new memory is a silent loss, while
+/// keeping a near-duplicate costs one retrieval slot and is visible.
+const DEDUP_THRESHOLD: f32 = 0.95;
+
+/// Embeddings are L2-normalized on the way in, so a dot product is the cosine.
+fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    crate::index::vector::dot(a, b)
+}
+
+/// What `plan_ingest` decided, before anything is written.
+#[derive(Default)]
+pub struct IngestPlan {
+    pub candidates: Vec<Candidate>,
+    /// Per candidate, the memory ids it supersedes. Parallel to `candidates`.
+    pub supersedes: Vec<Vec<Uuid>>,
+    pub proposed: usize,
+    pub duplicates: usize,
+    /// Whether an extractor actually ran.
+    pub ran: bool,
 }
 
 /// Below this, a value called "Unix milliseconds" is not one: it lands in
@@ -130,6 +153,9 @@ pub struct MemoryEngine {
     index_dim: Option<usize>,
     graph: GraphIndex,
     reranker: Option<Box<dyn Reranker>>,
+    /// Optional and off by default: the write path stays deterministic
+    /// unless a caller explicitly asks for extraction via `ingest`.
+    extractor: Option<Arc<dyn Extractor>>,
     /// Live records carrying an `expires_at`. When zero, recall can skip the
     /// per-candidate expiry check.
     expiring: usize,
@@ -182,6 +208,7 @@ impl MemoryEngine {
             index_cfg,
             graph: GraphIndex::default(),
             reranker: None,
+            extractor: None,
             expiring: 0,
         };
         // Checkpoint + tail recovery: load the last serialized state, then
@@ -224,6 +251,11 @@ impl MemoryEngine {
                 }
                 WalOp::Forget { id } => {
                     engine.drop_record(&id);
+                }
+                WalOp::SetSources { id, sources } => {
+                    if let Some(rec) = engine.records.get_mut(&id) {
+                        rec.sources = sources;
+                    }
                 }
             }
         }
@@ -639,6 +671,211 @@ impl MemoryEngine {
     /// Install a reranker; recall applies it unless a request opts out.
     pub fn set_reranker(&mut self, reranker: Box<dyn Reranker>) {
         self.reranker = Some(reranker);
+    }
+
+    /// Install an extractor. Nothing about `remember` changes — only `ingest`
+    /// consults it, and only when the request asks.
+    pub fn set_extractor(&mut self, extractor: Arc<dyn Extractor>) {
+        self.extractor = Some(extractor);
+    }
+
+    pub fn has_extractor(&self) -> bool {
+        self.extractor.is_some()
+    }
+
+    /// Phase one of an ingest: decide what to store, without changing
+    /// anything. Takes `&self` deliberately — this is where the LLM call
+    /// happens, and holding an exclusive lock across a multi-second model
+    /// round-trip would stall every recall in the namespace.
+    pub fn plan_ingest(&self, req: &IngestRequest) -> Result<IngestPlan> {
+        let mut plan = IngestPlan::default();
+        if !req.extract || req.turns.is_empty() {
+            return Ok(plan);
+        }
+        let Some(extractor) = self.extractor.clone() else {
+            return Ok(plan);
+        };
+        plan.ran = true;
+
+        // Show the model what is already known, so it has a chance to not
+        // restate it. Advisory: dedup below enforces this regardless.
+        let joined = req
+            .turns
+            .iter()
+            .map(|t| t.content.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let known: Vec<String> = self
+            .recall(&RecallRequest {
+                query: joined,
+                top_k: Some(12),
+                as_agent: req.agent_id.clone(),
+                filter: MemoryFilter {
+                    kinds: vec![MemoryKind::Semantic, MemoryKind::Procedural],
+                    ..Default::default()
+                },
+                rerank: Some(false),
+                ..Default::default()
+            })
+            .into_iter()
+            .map(|h| h.record.text)
+            .collect();
+
+        let candidates = extractor.extract(&req.turns, &known)?;
+        plan.proposed = candidates.len();
+        let threshold = req.dedup_threshold.unwrap_or(DEDUP_THRESHOLD);
+
+        for mut cand in candidates {
+            let embedding = self.embedder.embed(&cand.text)?;
+
+            // Deduplication is a cosine comparison, not a second model call:
+            // free, deterministic, and it cannot invent a reason to drop
+            // something. Compare against this exchange's own accepted facts
+            // too, since one exchange can restate itself.
+            let near_existing = self
+                .nearest_similarity(&embedding, req.agent_id.as_deref())
+                .is_some_and(|(_, sim)| sim >= threshold);
+            let near_accepted = plan.candidates.iter().any(|c: &Candidate| {
+                c.embedding
+                    .as_ref()
+                    .is_some_and(|e| cosine(e, &embedding) >= threshold)
+            });
+            if near_existing || near_accepted {
+                plan.duplicates += 1;
+                continue;
+            }
+
+            let mut replaces = Vec::new();
+            if req.supersede {
+                // Only memories close enough to be *about* the same thing are
+                // even offered as supersede candidates. A model asked "does
+                // this replace any of these 12 unrelated facts" has far more
+                // ways to say yes wrongly.
+                let neighbours: Vec<(Uuid, String)> = self
+                    .recall(&RecallRequest {
+                        query: cand.text.clone(),
+                        top_k: Some(5),
+                        as_agent: req.agent_id.clone(),
+                        strategy: RecallStrategy::Semantic,
+                        filter: MemoryFilter {
+                            kinds: vec![MemoryKind::Semantic, MemoryKind::Procedural],
+                            ..Default::default()
+                        },
+                        rerank: Some(false),
+                        ..Default::default()
+                    })
+                    .into_iter()
+                    .map(|h| (h.record.id, h.record.text))
+                    .collect();
+                if !neighbours.is_empty() {
+                    let texts: Vec<String> = neighbours.iter().map(|(_, t)| t.clone()).collect();
+                    for i in extractor.superseded_by(&cand.text, &texts)? {
+                        replaces.push(neighbours[i].0);
+                    }
+                }
+            }
+
+            cand.embedding = Some(embedding);
+            plan.candidates.push(cand);
+            plan.supersedes.push(replaces);
+        }
+        Ok(plan)
+    }
+
+    /// Phase two: commit a plan. Fast — no model calls, no embedding work
+    /// beyond what the plan already carries.
+    pub fn apply_ingest(&mut self, req: IngestRequest, plan: IngestPlan) -> Result<IngestReport> {
+        let mut report = IngestReport {
+            proposed: plan.proposed,
+            duplicates: plan.duplicates,
+            extraction_ran: plan.ran,
+            ..Default::default()
+        };
+
+        if req.store_raw && !req.turns.is_empty() {
+            let raw = self.remember_batch(
+                req.turns
+                    .iter()
+                    .map(|t| RememberRequest {
+                        text: format!("{}: {}", t.role, t.content),
+                        kind: MemoryKind::Episodic,
+                        tags: req.tags.clone(),
+                        session_id: req.session_id.clone(),
+                        agent_id: req.agent_id.clone(),
+                        visibility: req.visibility,
+                        created_at: req.created_at,
+                        ..Default::default()
+                    })
+                    .collect(),
+            )?;
+            report.raw = raw.into_iter().map(|r| r.id).collect();
+        }
+
+        for (cand, replaces) in plan.candidates.into_iter().zip(plan.supersedes) {
+            let record = self.remember(RememberRequest {
+                text: cand.text,
+                kind: cand.kind,
+                tags: [req.tags.clone(), cand.tags].concat(),
+                session_id: req.session_id.clone(),
+                agent_id: req.agent_id.clone(),
+                importance: Some(cand.importance),
+                visibility: req.visibility,
+                created_at: req.created_at,
+                embedding: cand.embedding,
+                ..Default::default()
+            })?;
+
+            // Provenance: which turns this was distilled from, and which
+            // memories it replaced. `sources` is why an extraction mistake is
+            // auditable instead of just wrong.
+            let mut sources = report.raw.clone();
+            sources.extend(replaces.iter().copied());
+            if !sources.is_empty() {
+                self.set_sources(record.id, sources)?;
+            }
+
+            for old in replaces {
+                if self.forget(old)? {
+                    report.superseded.push(old);
+                }
+            }
+            report.extracted.push(record.id);
+        }
+        Ok(report)
+    }
+
+    /// Plan and commit in one call. Convenient for library use and tests; the
+    /// server splits the phases so the model call runs under a read lock.
+    pub fn ingest(&mut self, req: IngestRequest) -> Result<IngestReport> {
+        let plan = self.plan_ingest(&req)?;
+        self.apply_ingest(req, plan)
+    }
+
+    /// Rewrite a record's provenance, durably. Separate from `remember`
+    /// because `sources` is derived by the engine, never caller-supplied.
+    fn set_sources(&mut self, id: Uuid, sources: Vec<Uuid>) -> Result<()> {
+        let Some(record) = self.records.get_mut(&id) else {
+            return Ok(());
+        };
+        record.sources = sources.clone();
+        self.wal
+            .lock()
+            .expect("wal lock")
+            .append(&WalOp::SetSources { id, sources })?;
+        Ok(())
+    }
+
+    /// Closest live memory to `embedding` by cosine, respecting visibility.
+    fn nearest_similarity(&self, embedding: &[f32], as_agent: Option<&str>) -> Option<(Uuid, f32)> {
+        let now = now_ms();
+        self.records
+            .values()
+            .filter(|r| !is_expired(r, now) && visible_to(r, as_agent))
+            .filter_map(|r| {
+                let e = r.embedding.as_ref()?;
+                (e.len() == embedding.len()).then(|| (r.id, cosine(e, embedding)))
+            })
+            .max_by(|a, b| a.1.total_cmp(&b.1))
     }
 
     /// Rebuild indexes from live records only (dropping tombstones), then
